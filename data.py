@@ -1,6 +1,6 @@
 from settings import DATA_PATH
 import argparse
-import os 
+import os
 import glob
 import re
 from multiprocessing.pool import ThreadPool
@@ -11,41 +11,65 @@ from gensim.parsing.preprocessing import strip_numeric
 from gensim.parsing.preprocessing import strip_multiple_whitespaces
 from gensim.parsing.preprocessing import strip_short
 from torch import nn
-import torchvision.models as models 
+import torchvision.models as models
+
+
+def _parse_text(soup):
+    try:
+        p_tags = soup.select('.mw-parser-output >  h2:nth-of-type(1)')[0].find_all_previous('p')
+    except IndexError:
+        p_tags = soup.select('.mw-parser-output > p')
+
+    abstract = ''.join([p.text for p in reversed(p_tags)])
+    full_text = ''.join([p.text for p in soup.select('.mw-parser-output > p')])
+
+    return abstract, full_text
 
 
 def parse_html(idx, html_path):
-
     f = open(html_path, 'r', encoding='utf-8')
     soup = BeautifulSoup(f.read(), 'html.parser')
     f.close()
-    
-    if os.path.exists(os.path.join(DATA_PATH, 'abstract', os.path.basename(html_path))):
-       os.rename(os.path.join(DATA_PATH, 'abstract', os.path.basename(html_path)), os.path.join(DATA_PATH, 'abstract', 'abstract_'+str(idx)))
-    else:
-        
-    
-    img_anchors = soup.select('.mw-parser-output > ul > li > a:nth-of-type(1), .mw-parser-output > .div-col > ul > li > a:nth-of-type(1)')
- 
-    for i in range(ien(img_anchors)):
-        if os.path.exists(os.path.join(DATA_PATH, 'images', os.path.basename(html_path)+'_'+str(i))):
-            os.rename(image_path, os.path.join(DATA_PATH, 'images', 'image_'+idx+'_'+i))
-            
+
+    html_file_name = os.path.basename(html_path)
+    # abstract, full_text = _parse_text(soup)
+    #
+    # if not os.path.exists(os.path.join(DATA_PATH, 'abstract', 'abstract_' + str(idx))):
+    #     abstract_io = open(os.path.join(DATA_PATH, 'abstract', 'abstract_' + str(idx)), 'w', encoding='utf-8')
+    #     abstract_io.write(abstract)
+    #     abstract_io.close()
+    #
+    # if not os.path.exists(os.path.join(DATA_PATH, 'full_text', 'full_text_' + str(idx))):
+    #     full_text_io = open(os.path.join(DATA_PATH, 'full_text', 'full_text_' + str(idx)), 'w', encoding='utf-8')
+    #     full_text_io.write(abstract)
+    #     full_text_io.close()
+
+    current_img_file_paths = glob.glob(os.path.join(DATA_PATH, 'images', html_file_name)+'_[0-9]*')
+    print(html_file_name)
+    print(current_img_file_paths)
+    # img_anchors = soup.select(
+    #     '.mw-parser-output > ul > li > a:nth-of-type(1), .mw-parser-output > .div-col > ul > li > a:nth-of-type(1)')
+    #
+    # for i in range(len(img_anchors)):
+    #     if os.path.exists(os.path.join(DATA_PATH, 'images', os.path.basename(html_path) + '_' + str(i))):
+    #         os.rename(image_path, os.path.join(DATA_PATH, 'images', 'image_' + idx + '_' + i))
 
 
 def main(config):
     if config.parse_html:
         htmls = glob.glob(os.path.join(DATA_PATH, 'raw_html', '*'))
+        print(len(htmls))
         doc_map = dict()
         for idx, html in enumerate(htmls):
             parse_html(idx, html)
-            doc_map[idx] = os.path.basename(html) 
-            print("{0:%}".format(idx/len(htmls)))
+            doc_map[idx] = os.path.basename(html)
+            print("{0:%}".format(idx / len(htmls)))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--parse_html', type=bool, default=False)
-    
+
     config = parser.parse_args()
     print(config)
     main(config)
