@@ -26,33 +26,33 @@ def _parse_text(soup):
     return abstract, full_text
 
 
-def parse_html(idx, html_path):
+def parse_html(doc_idx, html_path):
     f = open(html_path, 'r', encoding='utf-8')
     soup = BeautifulSoup(f.read(), 'html.parser')
     f.close()
 
     html_file_name = os.path.basename(html_path)
-    # abstract, full_text = _parse_text(soup)
-    #
-    # if not os.path.exists(os.path.join(DATA_PATH, 'abstract', 'abstract_' + str(idx))):
-    #     abstract_io = open(os.path.join(DATA_PATH, 'abstract', 'abstract_' + str(idx)), 'w', encoding='utf-8')
-    #     abstract_io.write(abstract)
-    #     abstract_io.close()
-    #
-    # if not os.path.exists(os.path.join(DATA_PATH, 'full_text', 'full_text_' + str(idx))):
-    #     full_text_io = open(os.path.join(DATA_PATH, 'full_text', 'full_text_' + str(idx)), 'w', encoding='utf-8')
-    #     full_text_io.write(abstract)
-    #     full_text_io.close()
+    abstract, full_text = _parse_text(soup)
 
-    current_img_file_paths = glob.glob(os.path.join(DATA_PATH, 'images', html_file_name)+'_[0-9]*')
-    print(html_file_name)
-    print(current_img_file_paths)
-    # img_anchors = soup.select(
-    #     '.mw-parser-output > ul > li > a:nth-of-type(1), .mw-parser-output > .div-col > ul > li > a:nth-of-type(1)')
-    #
-    # for i in range(len(img_anchors)):
-    #     if os.path.exists(os.path.join(DATA_PATH, 'images', os.path.basename(html_path) + '_' + str(i))):
-    #         os.rename(image_path, os.path.join(DATA_PATH, 'images', 'image_' + idx + '_' + i))
+    if not os.path.exists(os.path.join(DATA_PATH, 'abstract', 'abstract_' + str(doc_idx))):
+        abstract_io = open(os.path.join(DATA_PATH, 'abstract', 'abstract_' + str(doc_idx)), 'w', encoding='utf-8')
+        abstract_io.write(abstract)
+        abstract_io.close()
+
+    if not os.path.exists(os.path.join(DATA_PATH, 'full_text', 'full_text_' + str(doc_idx))):
+        full_text_io = open(os.path.join(DATA_PATH, 'full_text', 'full_text_' + str(doc_idx)), 'w', encoding='utf-8')
+        full_text_io.write(abstract)
+        full_text_io.close()
+
+    current_img_file_paths = glob.glob(os.path.join(DATA_PATH, 'images', html_file_name) + '_[0-9]*')
+
+    for path in current_img_file_paths:
+        img_idx = len(glob.glob(os.path.join(DATA_PATH, 'images', 'image_' + str(doc_idx)) + '_[0-9]*'))
+        os.rename(path, os.path.join(DATA_PATH, 'images', 'image_' + str(doc_idx) + '_' + str(img_idx)))
+
+    mapping_io = open(os.path.join(DATA_PATH, 'mapping'), 'a', encoding='utf-8')
+    mapping_io.write(str(doc_idx) + ',' + os.path.basename(html_path))
+    mapping_io.close()
 
 
 def main(config):
