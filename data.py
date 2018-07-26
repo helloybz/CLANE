@@ -50,10 +50,6 @@ def parse_html(doc_idx, html_path):
         img_idx = len(glob.glob(os.path.join(DATA_PATH, 'images', 'image_' + str(doc_idx)) + '_[0-9]*'))
         os.rename(path, os.path.join(DATA_PATH, 'images', 'image_' + str(doc_idx) + '_' + str(img_idx)))
 
-    mapping_io = open(os.path.join(DATA_PATH, 'mapping'), 'a', encoding='utf-8')
-    mapping_io.write(str(doc_idx) + ',' + os.path.basename(html_path))
-    mapping_io.close()
-
 
 def main(config):
     if config.parse_html:
