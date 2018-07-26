@@ -63,7 +63,7 @@ def main(config):
         for idx, html in enumerate(htmls):
             parse_html(idx, html)
             doc_map[idx] = os.path.basename(html)
-            print("{0:%}".format(idx / len(htmls)))
+            print("{0:%}".format(idx / len(htmls)), end='\r')
 
 
 if __name__ == "__main__":
