@@ -3,6 +3,7 @@ import glob
 import os
 import pickle
 import time
+import sys
 
 import gensim
 from gensim.parsing.preprocessing import strip_non_alphanum, preprocess_string
@@ -33,18 +34,17 @@ class Resnet18(nn.Module):
         print(list(self.resnet18._modules.keys()))
 
     def forward(self, img_set):
-        print('length of img_set:', len(img_set))
-        if len(img_set) != 0:
-            sum_of_img_feature = torch.zeros(512, 2, 2).to(device)
-            for idx, img in enumerate(img_set):
-                print(idx)
-                for name, layer in self.resnet18._modules.items():
-                    img = layer(img)
-                    if name in self.resnet18_select:
-                        sum_of_img_feature = sum_of_img_feature + img
-            return (sum_of_img_feature / len(img_set)).reshape(512 * 2 * 2).to(device)
-        else:
-            return torch.zeros((512, 2, 2), dtype=torch.float, device=device).unsqueeze_(0).reshape(512 * 2 * 2)
+        with torch.no_grad():
+            if len(img_set) != 0:
+                sum_of_img_feature = torch.zeros(512, 2, 2).to(device)
+                for idx, img in enumerate(img_set):
+                    for name, layer in self.resnet18._modules.items():
+                        img = layer(img)
+                        if name in self.resnet18_select:
+                            sum_of_img_feature = sum_of_img_feature + img
+                return (sum_of_img_feature / len(img_set)).reshape(512 * 2 * 2).detach().cpu().numpy()
+            else:
+                return torch.zeros((512, 2, 2), dtype=torch.float).unsqueeze_(0).reshape(512 * 2 * 2).detach().cpu().numpy()
 
 
 class Doc2Vec(nn.Module):
@@ -62,7 +62,7 @@ class Doc2Vec(nn.Module):
 
     def forward(self, text):
         corpus = gensim.utils.simple_preprocess(text)
-        return torch.from_numpy(self.model.infer_vector(corpus)).to(device)
+        return self.model.infer_vector(corpus)
 
 
 def load_images(image_path, transform=None, max_size=None, shape=None):
@@ -94,10 +94,6 @@ def main(config):
     else:
         raise argparse.ArgumentError
 
-    if config.img_embedder == 'resnet18':
-        img_embedder = Resnet18()
-    else:
-        raise Exception
     #
     if os.path.exists(os.path.join(PICKLE_PATH, doc2vec_pickle_name)):
         txt_embedder = pickle.load(open(os.path.join(PICKLE_PATH, doc2vec_pickle_name), 'rb'))
@@ -126,14 +122,16 @@ def main(config):
                 with open(text_path, 'r', encoding='utf-8') as txt_io:
                     txt_feature = txt_embedder.forward(txt_io.read())
                 img_feature = img_embedder.forward(img_set)
-                merged_feature = torch.cat((txt_feature, img_feature)).unsqueeze(0).detach().cpu().numpy()
+                merged_feature = np.hstack((txt_feature, img_feature))
                 if c_x is not None:
-                    c_x = np.concatenate((c_x, merged_feature), axis=0)
+                    c_x = np.vstack((c_x, merged_feature))
                 else:
                     c_x = merged_feature
                 print('done {0:%} {1:}'.format(idx / len(text_paths), c_x.shape), end="\r")
             except Exception:
-                print(text_paths)
+                doc_list = pickle.load(open(os.path.join(PICKLE_PATH, 'doc_name_list'), 'rb'))
+                doc_id = int(os.path.basename(text_path).split('_')[-1])
+                print(text_path, doc_list[doc_id])
                 raise Exception
 
         pickle.dump(c_x, open(os.path.join(PICKLE_PATH, 'c_x'), 'wb'))
