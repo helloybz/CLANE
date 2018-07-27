@@ -1,10 +1,15 @@
-from settings import DATA_PATH
+from settings import DATA_PATH, PICKLE_PATH
 import argparse
 import os
 import glob
 import re
+import pickle
+import imghdr
+import requests
+from io import BytesIO
+from time import sleep
 from multiprocessing.pool import ThreadPool
-
+from PIL import Image
 from bs4 import BeautifulSoup
 from gensim.parsing.preprocessing import strip_non_alphanum
 from gensim.parsing.preprocessing import strip_numeric
@@ -51,6 +56,34 @@ def parse_html(doc_idx, html_path):
         os.rename(path, os.path.join(DATA_PATH, 'images', 'image_' + str(doc_idx) + '_' + str(img_idx)))
 
 
+def checkup(args):
+    idx, doc_title = args
+    doc_list = pickle.load(open(os.path.join(PICKLE_PATH, 'doc_name_list'), 'rb'))
+    
+    soup = BeautifulSoup(open(os.path.join(DATA_PATH, 'raw_html', doc_title), 'r').read(), 'html.parser')
+    img_a_tags = soup.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
+    
+    image_set = glob.glob(os.path.join(DATA_PATH, 'images', 'image_'+str(idx)+'_*'))
+ 
+    if len(image_set) != len(img_a_tags):
+        _check_images(idx, tags=img_a_tags)
+    
+    for image in image_set: 
+        try:
+            img = Image.open(image)
+        except Exception:
+            _check_images(idx, tags=img_a_tags)
+            checkup((idx, doc_title))
+            break
+
+
+def _check_images(idx, tags=None):
+    for img_idx, tag in enumerate(tags):
+        sleep(1)
+        img_io = open(os.path.join(DATA_PATH, 'images', 'image_'+str(idx)+'_'+str(img_idx)), 'wb')
+        img_io.write(requests.get('https:'+tag.attrs['src']).content)
+        img_io.close()
+    
 def main(config):
     if config.parse_html:
         htmls = glob.glob(os.path.join(DATA_PATH, 'raw_html', '*'))
@@ -61,11 +94,20 @@ def main(config):
             doc_map[idx] = os.path.basename(html)
             print("{0:%}".format(idx / len(htmls)), end='\r')
 
+    if config.check:
+        pool = ThreadPool(3)
+        with open(os.path.join(PICKLE_PATH, 'doc_name_list'), 'rb') as doc_list_io:
+            doc_list = pickle.load(doc_list_io)
+          
+        for idx, _ in enumerate(pool.imap(checkup, enumerate(doc_list))):
+            print('{0:%}'.format(idx/len(doc_list)), end='\r')
+ 
+        pool.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--parse_html', type=bool, default=False)
-
+    parser.add_argument('--parse_html', action='store_true')
+    parser.add_argument('--check', action='store_true')
     config = parser.parse_args()
     print(config)
     main(config)
