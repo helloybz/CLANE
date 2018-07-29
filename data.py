@@ -1,22 +1,15 @@
-from settings import DATA_PATH, PICKLE_PATH
 import argparse
-import os
 import glob
-import re
+import os
 import pickle
-import imghdr
-import requests
-from io import BytesIO
-from time import sleep
 from multiprocessing.pool import ThreadPool
+from time import sleep
+
+import requests
 from PIL import Image
 from bs4 import BeautifulSoup
-from gensim.parsing.preprocessing import strip_non_alphanum
-from gensim.parsing.preprocessing import strip_numeric
-from gensim.parsing.preprocessing import strip_multiple_whitespaces
-from gensim.parsing.preprocessing import strip_short
-from torch import nn
-import torchvision.models as models
+
+from settings import DATA_PATH, PICKLE_PATH
 
 
 def _parse_text(soup):
@@ -58,19 +51,22 @@ def parse_html(doc_idx, html_path):
 
 def checkup(args):
     idx, doc_title = args
-    doc_list = pickle.load(open(os.path.join(PICKLE_PATH, 'doc_name_list'), 'rb'))
-    
-    soup = BeautifulSoup(open(os.path.join(DATA_PATH, 'raw_html', doc_title), 'r').read(), 'html.parser')
+    with open(os.path.join(PICKLE_PATH, 'doc_name_list'), 'rb') as doc_mapping_io:
+        doc_list = pickle.load(doc_mapping_io)
+
+    with open(os.path.join(DATA_PATH, 'raw_html', doc_title), 'r', encoding='utf-8') as html_io:
+        soup = BeautifulSoup(html_io.read(), 'html.parser')
     img_a_tags = soup.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
-    
-    image_set = glob.glob(os.path.join(DATA_PATH, 'images', 'image_'+str(idx)+'_*'))
- 
+
+    image_set = glob.glob(os.path.join(DATA_PATH, 'images', 'image_' + str(idx) + '_*'))
+
     if len(image_set) != len(img_a_tags):
         _check_images(idx, tags=img_a_tags)
-    
-    for image in image_set: 
+
+    for image in image_set:
         try:
             img = Image.open(image)
+            img.close()
         except Exception:
             _check_images(idx, tags=img_a_tags)
             checkup((idx, doc_title))
@@ -80,14 +76,13 @@ def checkup(args):
 def _check_images(idx, tags=None):
     for img_idx, tag in enumerate(tags):
         sleep(1)
-        img_io = open(os.path.join(DATA_PATH, 'images', 'image_'+str(idx)+'_'+str(img_idx)), 'wb')
-        img_io.write(requests.get('https:'+tag.attrs['src']).content)
-        img_io.close()
-    
+        with open(os.path.join(DATA_PATH, 'images', 'image_' + str(idx) + '_' + str(img_idx)), 'wb') as img_io:
+            img_io.write(requests.get('https:' + tag.attrs['src']).content)
+
+
 def main(config):
     if config.parse_html:
         htmls = glob.glob(os.path.join(DATA_PATH, 'raw_html', '*'))
-        print(len(htmls))
         doc_map = dict()
         for idx, html in enumerate(htmls):
             parse_html(idx, html)
@@ -98,11 +93,12 @@ def main(config):
         pool = ThreadPool(3)
         with open(os.path.join(PICKLE_PATH, 'doc_name_list'), 'rb') as doc_list_io:
             doc_list = pickle.load(doc_list_io)
-          
+
         for idx, _ in enumerate(pool.imap(checkup, enumerate(doc_list))):
-            print('{0:%}'.format(idx/len(doc_list)), end='\r')
- 
+            print('{0:%}'.format(idx / len(doc_list)), end='\r')
+
         pool.close()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
