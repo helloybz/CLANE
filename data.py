@@ -58,7 +58,6 @@ def parse_html(doc_idx, html_path):
 
 def checkup(args):
     idx, doc_title = args
-    print(doc_title)
     doc_list = pickle.load(open(os.path.join(PICKLE_PATH, 'doc_name_list'), 'rb'))
     
     soup = BeautifulSoup(open(os.path.join(DATA_PATH, 'raw_html', doc_title), 'r').read(), 'html.parser')
