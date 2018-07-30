@@ -71,6 +71,8 @@ def checkup(args):
             img.close()
         except Exception:
             print('Refresh', doc_title)
+            for target_image in image_set:
+                os.remove(target_image)
             _check_doc(idx,doc_title)
             _check_images(idx, tags=img_a_tags)
             break
