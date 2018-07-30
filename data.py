@@ -71,12 +71,14 @@ def checkup(args):
             img.close()
         except Exception:
             print('Refresh', doc_title)
+            for target_image in image_set:
+                os.remove(target_image)
             _check_doc(idx,doc_title)
             _check_images(idx, tags=img_a_tags)
             break
 
 def _check_doc(idx, doc_title):
-    with open(os.path.join(DATA_PATH, 'raw_html', doc_title), 'w') as raw_html_io:
+    with open(os.path.join(DATA_PATH, 'raw_html', doc_title), 'w', encoding='utf-8') as raw_html_io:
         new_html = requests.get('https://en.wikipedia.org/wiki/'+doc_title).text
         raw_html_io.write(new_html)
     parse_html(idx, os.path.join(DATA_PATH, 'raw_html', doc_title))
