@@ -2,71 +2,18 @@ import argparse
 import glob
 import os
 import pickle
-import time
 
-import gensim
 import numpy as np
-import torch
-import torchvision.models as models
 from PIL import Image
-from gensim.parsing.preprocessing import strip_multiple_whitespaces
-from gensim.parsing.preprocessing import strip_non_alphanum, preprocess_string
-from gensim.parsing.preprocessing import strip_numeric
-from gensim.parsing.preprocessing import strip_short
-from torch import nn
+from gensim.parsing.preprocessing import preprocess_string
 from torch.nn.functional import cosine_similarity
-from torchvision import transforms
 
+from models import device, Resnet18, TEXT_FILTERS, Doc2Vec
 from settings import DATA_PATH
 from settings import PICKLE_PATH
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-TEXT_FILTERS = [lambda x: x.lower(), strip_non_alphanum, strip_numeric, strip_multiple_whitespaces, strip_short]
-
-
-class Resnet18(nn.Module):
-    def __init__(self):
-        super(Resnet18, self).__init__()
-        self.resnet18_select = ['avgpool']
-        self.resnet18 = models.resnet18(pretrained=True)
-        self.resnet18._modules.popitem(last=True)
-        print(list(self.resnet18._modules.keys()))
-
-    def forward(self, img_set):
-        with torch.no_grad():
-            if len(img_set) != 0:
-                sum_of_img_feature = torch.zeros(512, 2, 2).to(device)
-                for idx, img in enumerate(img_set):
-                    for name, layer in self.resnet18._modules.items():
-                        img = layer(img)
-                        if name in self.resnet18_select:
-                            sum_of_img_feature = sum_of_img_feature + img
-                return (sum_of_img_feature / len(img_set)).reshape(512 * 2 * 2).detach().cpu().numpy()
-            else:
-                return torch.zeros((512, 2, 2), dtype=torch.float).unsqueeze_(0).reshape(
-                    512 * 2 * 2).detach().cpu().numpy()
-
-
-class Doc2Vec(nn.Module):
-    def __init__(self, txts, vector_size=512 * 2 * 2, min_count=2, epochs=40, ):
-        super(Doc2Vec, self).__init__()
-        print('Initializing Doc2Vec model.')
-        self.model = gensim.models.doc2vec.Doc2Vec(vector_size=vector_size, min_count=min_count, epochs=epochs)
-
-        print('Training the Doc2Vec model')
-        self.train_corpus = [gensim.models.doc2vec.TaggedDocument(txt, [idx]) for idx, txt in enumerate(txts)]
-        self.model.build_vocab(self.train_corpus)
-        start_time = time.time()
-        self.model.train(self.train_corpus, total_examples=self.model.corpus_count, epochs=self.model.epochs)
-        print("Training Doc2Vec done in %s seconds ___" % (time.time() - start_time))
-
-    def forward(self, text):
-        corpus = gensim.utils.simple_preprocess(text)
-        return self.model.infer_vector(corpus)
-
-
-def load_images(image_path, transform=None, max_size=None, shape=None):
+def _load_images(image_path, transform=None, max_size=None, shape=None):
     image = Image.open(image_path)
 
     if max_size:
@@ -84,9 +31,14 @@ def load_images(image_path, transform=None, max_size=None, shape=None):
 
 
 def main(config):
-    # process config args
+    with open(os.path.join(PICKLE_PATH, 'doc_ids'), 'rb') as doc_mapping_io:
+        doc_ids = pickle.load(doc_mapping_io)
+
+    # Load models
     if config.img_embedder == 'resnet18':
         img_embedder = Resnet18().to(device)
+    else:
+        raise argparse.ArgumentError
 
     if config.doc2vec_text == 'abstract':
         doc2vec_pickle_name = 'doc2vec_abstract'
@@ -95,7 +47,6 @@ def main(config):
     else:
         raise argparse.ArgumentError
 
-    #
     if os.path.exists(os.path.join(PICKLE_PATH, doc2vec_pickle_name)):
         txt_embedder = pickle.load(open(os.path.join(PICKLE_PATH, doc2vec_pickle_name), 'rb'))
     else:
@@ -105,20 +56,15 @@ def main(config):
         txt_embedder = Doc2Vec(txts, vector_size=config.doc2vec_size)
         pickle.dump(txt_embedder, open(os.path.join(PICKLE_PATH, doc2vec_pickle_name), 'wb'))
 
-    resnet18_transform = transforms.Compose([
-        transforms.Lambda(lambda x: x.convert('RGB')),
-        transforms.ToTensor(),
-        transforms.Lambda(lambda x: x.repeat(3, 1, 1) if x.size()[0] == 1 else x)
-    ])
-
-    if not os.path.exists(os.path.join(PICKLE_PATH, 'c_x')):
+    # Load or Calculate C_X
+    if not os.path.exists(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}_{2}'.format(config.img_embedder, config.doc2vec_size, config.doc2vec_text))):
         c_x = None
         text_paths = glob.glob(os.path.join(DATA_PATH, config.doc2vec_text, '*'))
         for idx, text_path in enumerate(text_paths):
             try:
-                doc_id = os.path.basename(text_path).split('_')[-1]
+                doc_id = str(os.path.basename(text_path)).split('_')[-1]
                 img_set = glob.glob(os.path.join(DATA_PATH, 'images', 'image_' + doc_id + '_*'))
-                img_set = [load_images(path, transform=resnet18_transform, shape=(255, 255)) for path in img_set]
+                img_set = [_load_images(path, transform=img_embedder.transform, shape=(255, 255)) for path in img_set]
 
                 with open(text_path, 'r', encoding='utf-8') as txt_io:
                     txt_feature = txt_embedder.forward(txt_io.read())
@@ -128,19 +74,33 @@ def main(config):
                     c_x = np.vstack((c_x, merged_feature))
                 else:
                     c_x = merged_feature
-                print('done {0:%} {1:}'.format(idx / len(text_paths), c_x.shape), end="\r")
+                print('Calculating C_X done {0:%} {1:}'.format(idx / len(text_paths), c_x.shape), end="\r")
             except Exception:
                 doc_list = pickle.load(open(os.path.join(PICKLE_PATH, 'doc_name_list'), 'rb'))
                 doc_id = int(os.path.basename(text_path).split('_')[-1])
                 print(text_path, doc_list[doc_id])
                 raise Exception
 
-        pickle.dump(c_x, open(os.path.join(PICKLE_PATH, 'c_x'), 'wb'))
+        pickle.dump(c_x, open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}_{2}'.format(config.img_embedder, config.doc2vec_size, config.doc2vec_text)), 'wb'))
 
     else:
-        c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x'), 'rb'))
+        c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}_{2}'.format(config.img_embedder, config.doc2vec_size, config.doc2vec_text)), 'rb'))
 
-    # Calculate Similarity
+    v_x = c_x
+    del c_x
+
+    # update v_x
+    network = pickle.load(open(os.path.join(PICKLE_PATH, 'network'), 'rb'))
+    #
+    # ## Initialize Similarity matrix
+    # for node_id, doc in enumerate(doc_ids):
+    #     v = v_x[node_id]
+    #     reference_ids = network[node_id]
+    #     for reference_id in reference_ids:
+    #         cosine_similarity(v, v_x[reference_id])
+
+
+# Calculate Similarity
 
 
 if __name__ == '__main__':
