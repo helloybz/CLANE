@@ -3,17 +3,16 @@ import glob
 import os
 import pickle
 import time
-import sys
 
 import gensim
-from gensim.parsing.preprocessing import strip_non_alphanum, preprocess_string
-from gensim.parsing.preprocessing import strip_numeric
-from gensim.parsing.preprocessing import strip_multiple_whitespaces
-from gensim.parsing.preprocessing import strip_short
 import numpy as np
 import torch
 import torchvision.models as models
 from PIL import Image
+from gensim.parsing.preprocessing import strip_multiple_whitespaces
+from gensim.parsing.preprocessing import strip_non_alphanum, preprocess_string
+from gensim.parsing.preprocessing import strip_numeric
+from gensim.parsing.preprocessing import strip_short
 from torch import nn
 from torchvision import transforms
 
@@ -44,7 +43,8 @@ class Resnet18(nn.Module):
                             sum_of_img_feature = sum_of_img_feature + img
                 return (sum_of_img_feature / len(img_set)).reshape(512 * 2 * 2).detach().cpu().numpy()
             else:
-                return torch.zeros((512, 2, 2), dtype=torch.float).unsqueeze_(0).reshape(512 * 2 * 2).detach().cpu().numpy()
+                return torch.zeros((512, 2, 2), dtype=torch.float).unsqueeze_(0).reshape(
+                    512 * 2 * 2).detach().cpu().numpy()
 
 
 class Doc2Vec(nn.Module):
@@ -138,6 +138,8 @@ def main(config):
 
     else:
         c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x'), 'rb'))
+
+    # Calculate Similarity
 
 
 if __name__ == '__main__':
