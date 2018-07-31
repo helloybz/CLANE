@@ -10,6 +10,7 @@ import requests
 from PIL import Image
 from bs4 import BeautifulSoup
 
+from helper import get
 from settings import DATA_PATH, PICKLE_PATH
 
 with open(os.path.join(PICKLE_PATH, 'doc_ids'), 'rb') as doc_mapping_io:
@@ -77,7 +78,7 @@ def checkup_images(args):
 
 def _update_doc(idx, file_name, need_a_tags=False):
     with open(os.path.join(DATA_PATH, 'raw_html', file_name), 'w', encoding='utf-8') as raw_html_io:
-        new_html = requests.get('https://en.wikipedia.org/wiki/' + file_name).text
+        new_html = get('https://en.wikipedia.org/wiki/' + file_name).text
         raw_html_io.write(new_html)
     parse_html_to_texts(idx, os.path.join(DATA_PATH, 'raw_html', file_name))
 
@@ -92,7 +93,7 @@ def _update_images(idx, tags=None):
     for img_idx, tag in enumerate(tags):
         sleep(1)
         with open(os.path.join(DATA_PATH, 'images', 'image_' + str(idx) + '_' + str(img_idx)), 'wb') as img_io:
-            img_io.write(requests.get('https:' + tag.attrs['src']).content)
+            img_io.write(get('https:' + tag.attrs['src']).content)
 
 
 def get_ref_ids(args):
@@ -123,9 +124,8 @@ def get_ref_ids(args):
     for ref in refs:
         if ref.has_attr('class') and 'mw-redirect' in ref.attrs['class']:
             sleep(1)
-            r = requests.get('https://en.wikipedia.org' + ref.attrs['href'])
-            title = BeautifulSoup(r.text, 'html.parser').select_one('#firstHeading').text.replace(' ', '_')
-            r.close()
+            response = get('https://en.wikipedia.org' + ref.attrs['href'])
+            title = BeautifulSoup(response.text, 'html.parser').select_one('#firstHeading').text.replace(' ', '_')
             if title in doc_ids:
                 ref_ids.append(doc_ids.index(title))
                 print(idx, ref_ids)
