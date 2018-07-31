@@ -29,7 +29,9 @@ def _parse_text(soup):
     return abstract, full_text
 
 
-def parse_html_to_texts(doc_idx, file_name):
+def parse_html_to_texts(args):
+    doc_idx, file_name = args
+
     with open(os.path.join(DATA_PATH, 'raw_html', file_name), 'r', encoding='utf-8') as html_io:
         soup = BeautifulSoup(html_io.read(), 'html.parser')
 
@@ -57,30 +59,28 @@ def checkup_images(args):
     # img paths of the document.
     image_set = glob.glob(os.path.join(DATA_PATH, 'images', 'image_' + str(idx) + '_*'))
 
-    # If the two list's length are not same, remove all the images of the document and re-crawl the images.
-    if len(image_set) != len(img_a_tags):
-        for target_image in image_set:
-            os.remove(target_image)
-        _update_images(idx, tags=img_a_tags)
-
-    # If there exists at least one invalid image file, remove all the images of the document.
-    # The invalid image is an image that PIL cannot open.
     try:
+        if len(image_set) != len(img_a_tags):
+            raise Exception
+
         for image in image_set:
             img = Image.open(image)
             img.close()
+
     except Exception:
-        for target_image in image_set:
-            os.remove(target_image)
+        print('Exception raised.', file_name, idx)
+        for invalid_image in image_set:
+            os.remove(invalid_image)
         img_a_tags = _update_doc(idx, file_name, need_a_tags=True)
         _update_images(idx, tags=img_a_tags)
+        checkup_images((idx, file_name))
 
 
 def _update_doc(idx, file_name, need_a_tags=False):
     with open(os.path.join(DATA_PATH, 'raw_html', file_name), 'w', encoding='utf-8') as raw_html_io:
         new_html = get('https://en.wikipedia.org/wiki/' + file_name).text
         raw_html_io.write(new_html)
-    parse_html_to_texts(idx, os.path.join(DATA_PATH, 'raw_html', file_name))
+        parse_html_to_texts((idx, file_name))
 
     if need_a_tags:
         with open(os.path.join(DATA_PATH, 'raw_html', file_name), 'r', encoding='utf-8') as html_io:
@@ -144,8 +144,8 @@ def main(config):
     #     doc_ids = pickle.load(doc_mapping_io)
 
     if config.parse_html_text:
-        for idx, file_name in enumerate(doc_ids):
-            parse_html_to_texts(idx, file_name)
+        pool = ThreadPool(3)
+        for idx, _ in enumerate(pool.imap(parse_html_to_texts, enumerate(doc_ids))):
             print("Parse htmls to texsts, done {0:%}".format(idx / len(doc_ids)), end='\r')
 
     if config.checkup_images:
@@ -157,14 +157,14 @@ def main(config):
 
     if config.build_network:
         pool = ThreadPool(3)
-
         network = {str(idx): set([]) for idx, doc in enumerate(doc_ids)}
         for idx, ref_ids in enumerate(pool.imap(get_ref_ids, enumerate(doc_ids))):
             network[str(idx)] = set(ref_ids)
-            print('Build network relations, done {0:%}'.format(idx / len(doc_ids)), end='\r')
+        print('Build network relations, done {0:%}'.format(idx / len(doc_ids)), end='\r')
 
         pool.close()
         pickle.dump(network, open(os.path.join(PICKLE_PATH, 'network'), 'wb'))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
