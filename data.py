@@ -96,14 +96,20 @@ def _update_images(idx, tags=None):
 
 
 def get_ref_ids(args):
+    """Get references in abstract part of a given doc."""
     idx, file_name = args
     with open(os.path.join(DATA_PATH, 'raw_html', file_name), 'r', encoding='utf-8') as html_io:
         soup = BeautifulSoup(html_io.read(), 'html.parser')
 
     refs = []
     # filtered = []
-    a_tags = soup.select('.mw-parser-output p a[href^="/wiki/"]')
-    for a in a_tags:
+    try:
+        p_tags_in_abstract = soup.select('.mw-parser-output >  h2:nth-of-type(1)')[0].find_all_previous('p')
+    except IndexError:
+        p_tags_in_abstract = soup.select('.mw-parser-output > p')
+
+    a_tags_in_abstract = sum([p.select('a[href^="/wiki/"]') for p in p_tags_in_abstract], [])
+    for a in a_tags_in_abstract:
         for pattern in ['Help:', 'File:', 'Wikipedia:', 'Special:', 'Talk:', 'Category:', 'Template:', 'Portal:', 'ISO',
                         'List_of_']:
             if pattern in a.attrs['href']:
@@ -121,23 +127,21 @@ def get_ref_ids(args):
             r.close()
             if title in doc_ids:
                 ref_ids.append(doc_ids.index(title))
-
         else:
             file_name = ref.attrs['href'].split('/')[-1]
             if file_name in doc_ids:
                 ref_ids.append(doc_ids.index(file_name))
-
     return ref_ids
 
 
 def main(config):
     # with open(os.path.join(PICKLE_PATH, 'doc_ids'), 'rb') as doc_mapping_io:
     #     doc_ids = pickle.load(doc_mapping_io)
-
     if config.parse_html_text:
         for idx, file_name in enumerate(doc_ids):
             parse_html_to_texts(idx, file_name)
             print("Parse htmls to texsts, done {0:%}".format(idx / len(doc_ids)), end='\r')
+    
 
     if config.checkup_images:
         pool = ThreadPool(3)
