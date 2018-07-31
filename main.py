@@ -14,6 +14,7 @@ from gensim.parsing.preprocessing import strip_non_alphanum, preprocess_string
 from gensim.parsing.preprocessing import strip_numeric
 from gensim.parsing.preprocessing import strip_short
 from torch import nn
+from torch.nn.functional import cosine_similarity
 from torchvision import transforms
 
 from settings import DATA_PATH
