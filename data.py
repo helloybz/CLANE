@@ -2,11 +2,9 @@ import argparse
 import glob
 import os
 import pickle
-import re
 from multiprocessing.pool import ThreadPool
 from time import sleep
 
-import requests
 from PIL import Image
 from bs4 import BeautifulSoup
 
@@ -68,7 +66,6 @@ def checkup_images(args):
             img.close()
 
     except Exception:
-        print('Exception raised.', file_name, idx)
         for invalid_image in image_set:
             os.remove(invalid_image)
         img_a_tags = _update_doc(idx, file_name, need_a_tags=True)
@@ -131,6 +128,7 @@ def get_ref_ids(args):
             file_name = ref.attrs['href'].split('/')[-1]
             if file_name in doc_ids:
                 ref_ids.append(doc_ids.index(file_name))
+
     return ref_ids
 
 
@@ -160,12 +158,21 @@ def main(config):
         pool.close()
         pickle.dump(network, open(os.path.join(PICKLE_PATH, 'network'), 'wb'))
 
+    if config.calc_internal_similarity:
+        c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x'), 'rb'))
+        len(c_x)
+        pool = ThreadPool(3)
+        # internal_similarity = np.zeros
+        #
+        # pool.close()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--parse_html_text', action='store_true')
     parser.add_argument('--checkup_images', action='store_true')
     parser.add_argument('--build_network', action='store_true')
+    parser.add_argument('--calc_internal_similarity', action='store_true')
     config = parser.parse_args()
     print(config)
     main(config)

@@ -5,7 +5,7 @@ import torch
 from gensim.parsing import strip_non_alphanum, strip_numeric, strip_multiple_whitespaces, strip_short
 
 from torch import nn
-from torchvision import models
+from torchvision import models, transforms
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -18,6 +18,11 @@ class Resnet18(nn.Module):
         self.resnet18_select = ['avgpool']
         self.resnet18 = models.resnet18(pretrained=True)
         self.resnet18._modules.popitem(last=True)
+        self.transform = transforms.Compose([
+            transforms.Lambda(lambda x: x.convert('RGB')),
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x.repeat(3, 1, 1) if x.size()[0] == 1 else x)
+        ])
         print(list(self.resnet18._modules.keys()))
 
     def forward(self, img_set):
