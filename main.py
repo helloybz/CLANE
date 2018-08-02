@@ -6,7 +6,7 @@ import pickle
 import numpy as np
 from PIL import Image
 from gensim.parsing.preprocessing import preprocess_string
-from torch.nn.functional import cosine_similarity
+from scipy.spatial import distance
 
 from models import device, Resnet18, TEXT_FILTERS, Doc2Vec
 from settings import DATA_PATH
@@ -58,7 +58,7 @@ def main(config):
 
     # Load or Calculate C_X
     if not os.path.exists(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}_{2}'.format(config.img_embedder, config.doc2vec_size, config.doc2vec_text))):
-        c_x = None
+        c_matrix = None
         text_paths = glob.glob(os.path.join(DATA_PATH, config.doc2vec_text, '*'))
         for idx, text_path in enumerate(text_paths):
             try:
@@ -70,10 +70,10 @@ def main(config):
                     txt_feature = txt_embedder.forward(txt_io.read())
                 img_feature = img_embedder.forward(img_set)
                 merged_feature = np.hstack((txt_feature, img_feature))
-                if c_x is not None:
-                    c_x = np.vstack((c_x, merged_feature))
+                if c_matrix is not None:
+                    c_matrix = np.vstack((c_x, merged_feature))
                 else:
-                    c_x = merged_feature
+                    c_matrix = merged_feature
                 print('Calculating C_X done {0:%} {1:}'.format(idx / len(text_paths), c_x.shape), end="\r")
             except Exception:
                 doc_list = pickle.load(open(os.path.join(PICKLE_PATH, 'doc_name_list'), 'rb'))
@@ -81,23 +81,39 @@ def main(config):
                 print(text_path, doc_list[doc_id])
                 raise Exception
 
-        pickle.dump(c_x, open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}_{2}'.format(config.img_embedder, config.doc2vec_size, config.doc2vec_text)), 'wb'))
+        pickle.dump(c_matrix, open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}_{2}'.format(config.img_embedder, config.doc2vec_size, config.doc2vec_text)), 'wb'))
 
     else:
-        c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}_{2}'.format(config.img_embedder, config.doc2vec_size, config.doc2vec_text)), 'rb'))
+        c_matrix = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}_{2}'.format(config.img_embedder, config.doc2vec_size, config.doc2vec_text)), 'rb'))
 
-    v_x = c_x
-    del c_x
+    v_matrix = c_matrix
 
-    # update v_x
+    # update v_matrix
     network = pickle.load(open(os.path.join(PICKLE_PATH, 'network'), 'rb'))
-    #
-    # ## Initialize Similarity matrix
-    # for node_id, doc in enumerate(doc_ids):
-    #     v = v_x[node_id]
-    #     reference_ids = network[node_id]
-    #     for reference_id in reference_ids:
-    #         cosine_similarity(v, v_x[reference_id])
+    
+    # Initialize Similarity matrix
+    s_c_x = pickle.load(open(os.path.join(PICKLE_PATH, 's_c_x'), 'rb'))
+    
+    is_converged = False
+    
+    while not is_converged:
+
+        is_converged = True
+
+        for node_id, doc in enumerate(doc_ids):
+            c_x = c_matrix[node_id]
+            
+            ref_ids = network[node_id]
+            sims = [s_c_x[node_id][ref_id] for ref_id in ref_ids]
+            regularized_sims = sim/sum(sims)
+            
+            diff = config.alpha * sum([r_sim * v_matrix(ref_id) for ref_id, r_sim  in zip(ref_ids, regularized_sims)])
+            
+            if distance.euclidean(v_matrix[node_id], c_x + diff) > config.threshold
+                is_converged = False
+
+
+            v_matrix[node_id] = c_x + diff
 
 
 if __name__ == '__main__':
@@ -105,6 +121,8 @@ if __name__ == '__main__':
     parser.add_argument('--img_embedder', type=str, default='resnet18')
     parser.add_argument('--doc2vec_size', type=int, default=2048)
     parser.add_argument('--doc2vec_text', type=str, default='abstract')
+    parser.add_argument('--alpha', type=float, default=0.1)
+    parser.add_argument('--threshold', type=float, default=0.1)
     config = parser.parse_args()
     print(config)
     main(config)

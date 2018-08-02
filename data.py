@@ -2,8 +2,11 @@ import argparse
 import glob
 import os
 import pickle
-from multiprocessing.pool import ThreadPool
+from multiprocessing.pool import ThreadPool, Pool
 from time import sleep
+from scipy import spatial
+import torch
+import numpy as np
 
 from PIL import Image
 from bs4 import BeautifulSoup
@@ -131,6 +134,9 @@ def get_ref_ids(args):
 
     return ref_ids
 
+def calc_sim(v):
+    return 1 - 1 * spatial.distance.cosine(v[0], v[1]), v[2], v[3]
+
 
 def main(config):
     # with open(os.path.join(PICKLE_PATH, 'doc_ids'), 'rb') as doc_mapping_io:
@@ -158,13 +164,21 @@ def main(config):
         pool.close()
         pickle.dump(network, open(os.path.join(PICKLE_PATH, 'network'), 'wb'))
 
-    if config.calc_internal_similarity:
+    if config.calc_s_c_x:
+        pool = Pool(5)
         c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x'), 'rb'))
-        len(c_x)
-        pool = ThreadPool(3)
-        # internal_similarity = np.zeros
-        #
-        # pool.close()
+        similarity_c_x = np.zeros((len(c_x), len(c_x)))
+        input_stuffs = [(c_x[i], c_x[j], i, j) for i in range(len(c_x)) for j in range(len(c_x)) if i>=j]
+        for idx, results in enumerate(pool.imap(calc_sim, input_stuffs)):
+            sim = results[0]
+            i = results[1]
+            j = results[2]
+            similarity_c_x[int(i)][int(j)] = sim
+            similarity_c_x[int(j)][int(i)] = sim
+            print('{0:%} done'.format(idx/len(input_stuffs)), end='\r')
+            
+        pickle.dump(similarity_c_x, open(os.path.join(PICKLE_PATH, 's_c_x'), 'wb'))
+        pool.close()
 
 
 if __name__ == "__main__":
@@ -172,7 +186,7 @@ if __name__ == "__main__":
     parser.add_argument('--parse_html_text', action='store_true')
     parser.add_argument('--checkup_images', action='store_true')
     parser.add_argument('--build_network', action='store_true')
-    parser.add_argument('--calc_internal_similarity', action='store_true')
+    parser.add_argument('--calc_s_c_x', action='store_true')
     config = parser.parse_args()
     print(config)
     main(config)
