@@ -3,7 +3,7 @@ import glob
 import os
 import pickle
 from multiprocessing.pool import ThreadPool
-
+import pdb
 import numpy as np
 from PIL import Image
 from gensim.parsing.preprocessing import preprocess_string
@@ -93,11 +93,10 @@ def main(config):
                                                'c_x_{0}_{1}_{2}'.format(config.img_embedder, config.doc2vec_size,
                                                                         config.doc2vec_text)), 'rb'))
 
-    v_list = c_list
+    v_list = c_list.copy()
 
     # update v_matrix
     network = pickle.load(open(os.path.join(PICKLE_PATH, 'network'), 'rb'))
-
     # Initialize Similarity matrix
     s_c_x = pickle.load(open(os.path.join(PICKLE_PATH, 's_c_x'), 'rb'))
 
@@ -107,30 +106,35 @@ def main(config):
         node_id = args[0]
         c_x = c_list[node_id]
 
-        ref_ids = network[node_id]
-        sims = [s_c_x[node_id][ref_id] for ref_id in ref_ids]
+        ref_ids = network[str(node_id)]
+        sims = [np.exp(s_c_x[node_id][ref_id]) for ref_id in ref_ids]
         regularized_sims = [sim / sum(sims) for sim in sims]
-
-        diff = config.alpha * sum([r_sim * v_list(ref_id) for ref_id, r_sim in zip(ref_ids, regularized_sims)])
+        diff = config.alpha * sum([r_sim * v_list[ref_id] for ref_id, r_sim in zip(ref_ids, regularized_sims)])
 
         delta = distance.euclidean(v_list[node_id], c_x + diff)
 
         v_list[node_id] = c_x + diff
 
+        # pdb.set_trace()
         return delta > config.threshold, delta
 
-    pool = ThreadPool(5)
+    pool = ThreadPool(1)
 
     iteration_counter = 0
 
     while not is_converged:
         is_converged = True
-
+        max_delta = -np.inf
         for idx, results in enumerate(pool.imap(update_v, enumerate(doc_ids))):
-            is_converged = results[0]
-            print('iter{0}  {1:%} done. delta: {2}'.format(iteration_counter, (idx/len(doc_ids)), results[1]), end='\r')
-
+            #if results[0]:
+            #	is_converged = results[0]
+            max_delta = max(max_delta, results[1])
+            print('iter{0}  {1:%} done. delta: {2}'.format(iteration_counter, (idx/len(doc_ids)), max_delta), end='\r')
+        is_converged = max_delta < config.threshold
+        iteration_counter += 1
     pool.close()
+
+    pickle.dump(v_list, open(os.path.join(PICKLE_PATH, 'v_list_thr{0}'.format(config.threshold)), 'wb'))
 
 
 if __name__ == '__main__':
@@ -138,7 +142,7 @@ if __name__ == '__main__':
     parser.add_argument('--img_embedder', type=str, default='resnet18')
     parser.add_argument('--doc2vec_size', type=int, default=2048)
     parser.add_argument('--doc2vec_text', type=str, default='abstract')
-    parser.add_argument('--alpha', type=float, default=0.1)
+    parser.add_argument('--alpha', type=float, default=0.9)
     parser.add_argument('--threshold', type=float, default=0.1)
     config = parser.parse_args()
     print(config)
