@@ -134,6 +134,7 @@ def get_ref_ids(args):
 
     return ref_ids
 
+
 def calc_sim(v):
     return 1 - 1 * spatial.distance.cosine(v[0], v[1]), v[2], v[3]
 
@@ -145,7 +146,6 @@ def main(config):
         pool = ThreadPool(3)
         for idx, _ in enumerate(pool.imap(parse_html_to_texts, enumerate(doc_ids))):
             print("Parse htmls to texsts, done {0:%}".format(idx / len(doc_ids)), end='\r')
-    
 
     if config.checkup_images:
         pool = ThreadPool(3)
@@ -155,11 +155,11 @@ def main(config):
         pool.close()
 
     if config.build_network:
-        pool = ThreadPool(3)
+        pool = Pool(10)
         network = {str(idx): set([]) for idx, doc in enumerate(doc_ids)}
         for idx, ref_ids in enumerate(pool.imap(get_ref_ids, enumerate(doc_ids))):
             network[str(idx)] = set(ref_ids)
-        print('Build network relations, done {0:%}'.format(idx / len(doc_ids)), end='\r')
+            print('Build network relations, done {0:%}'.format(idx / len(doc_ids)), end='\r')
 
         pool.close()
         pickle.dump(network, open(os.path.join(PICKLE_PATH, 'network'), 'wb'))
@@ -168,15 +168,15 @@ def main(config):
         pool = Pool(5)
         c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x'), 'rb'))
         similarity_c_x = np.zeros((len(c_x), len(c_x)))
-        input_stuffs = [(c_x[i], c_x[j], i, j) for i in range(len(c_x)) for j in range(len(c_x)) if i>=j]
+        input_stuffs = [(c_x[i], c_x[j], i, j) for i in range(len(c_x)) for j in range(len(c_x)) if i >= j]
         for idx, results in enumerate(pool.imap(calc_sim, input_stuffs)):
             sim = results[0]
             i = results[1]
             j = results[2]
             similarity_c_x[int(i)][int(j)] = sim
             similarity_c_x[int(j)][int(i)] = sim
-            print('{0:%} done'.format(idx/len(input_stuffs)), end='\r')
-            
+            print('{0:%} done'.format(idx / len(input_stuffs)), end='\r')
+
         pickle.dump(similarity_c_x, open(os.path.join(PICKLE_PATH, 's_c_x'), 'wb'))
         pool.close()
 
