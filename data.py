@@ -4,6 +4,8 @@ import os
 import pickle
 from multiprocessing.pool import ThreadPool, Pool
 from time import sleep
+from urllib.parse import unquote
+
 from scipy import spatial
 import torch
 import numpy as np
@@ -123,14 +125,19 @@ def get_ref_ids(args):
     for ref in refs:
         if ref.has_attr('class') and 'mw-redirect' in ref.attrs['class']:
             sleep(1)
-            response = get('https://en.wikipedia.org' + ref.attrs['href'])
-            title = BeautifulSoup(response.text, 'html.parser').select_one('#firstHeading').text.replace(' ', '_')
-            if title in doc_ids:
-                ref_ids.append(doc_ids.index(title))
+            try:
+                response = get('https://en.wikipedia.org/w/index.php?title=' + ref.attrs['href'].split('/')[-1].split('#')[0]+'&redirect=no')
+                ref_title = BeautifulSoup(response.text, 'html.parser').select_one('ul.redirectText a').attrs['href'].split('/')[-1]
+            except AttributeError:
+                ref_title = ref.attrs['href'].split('/')[-1]
+            except OSError:
+                return get_ref_ids((idx, file_name))
+
         else:
-            file_name = ref.attrs['href'].split('/')[-1]
-            if file_name in doc_ids:
-                ref_ids.append(doc_ids.index(file_name))
+            ref_title = ref.attrs['href'].split('/')[-1]
+            
+        if unquote(ref_title) in doc_ids:
+            ref_ids.append(doc_ids.index(unquote(ref_title)))
 
     return ref_ids
 
