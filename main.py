@@ -32,102 +32,98 @@ def load_image(image_path, transform=None, max_size=None, shape=None):
     return image.to(device)
 
 
-def get_content_vectors(dataset):
+def get_content_vectors(dataset, target_ids=None):
     if dataset == 'wikipedia':
         # Load or Calculate C_X
-        if not os.path.exists(
-                os.path.join(PICKLE_PATH, 'wikipedia_c_{0}_{1}'.format(config.img_embedder, config.doc2vec_size))):
-            # Image Modality Model
-            if config.img_embedder == 'resnet18':
-                img_embedder = Resnet18().to(device)
-            else:
-                raise argparse.ArgumentError
-
-            # Text Modality Model
-            if os.path.exists(os.path.join(PICKLE_PATH, 'wikipedia_doc2vec_embedder')):
-                txt_embedder = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_doc2vec_embedder'), 'rb'))
-            else:
-                doc_paths = glob.glob(os.path.join(DATA_PATH, 'wiki2vec', 'full_text', '*'))
-                txts = [open(path, 'r', encoding='utf-8').read() for path in doc_paths]
-                txts = [preprocess_string(txt, TEXT_FILTERS) for txt in txts]
-                txt_embedder = Doc2Vec(txts, vector_size=config.doc2vec_size)
-                pickle.dump(txt_embedder, open(os.path.join(PICKLE_PATH, 'wikipedia_doc2vec_embedder'), 'wb'))
-            docs = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_docs'), 'rb'))
-
-            pool = ThreadPool(5)
-
-            c = None
-
-            for idx, doc_title in enumerate(pool.imap(lambda x: x, docs)):
-                img_paths = glob.glob(os.path.join(DATA_PATH, 'wiki2vec', 'images', str(idx) + '_*'))
-                img_set = list()
-                for path in img_paths:
-                    try:
-                        img = load_image(path, transform=img_embedder.transform, shape=(255, 255))
-                        img_set.append(img)
-                    except Exception:
-                        with open(os.path.join(BASE_DIR, 'bad_images'), 'a') as bad_img_io:
-                            bad_img_io.write(os.path.basename(path))
-
-                with open(os.path.join(DATA_PATH, 'wiki2vec', 'full_text', str(idx)), 'r', encoding='utf-8') as txt_io:
-                    text = txt_io.read()
-
-                img_feature = img_embedder.forward(img_set)
-                text_feature = txt_embedder.forward(text)
-                merged_feature = np.hstack((text_feature, img_feature))
-
-                if c is not None:
-                    c = np.vstack((c, merged_feature))
+        if target_ids is None:
+            if not os.path.exists(
+                    os.path.join(PICKLE_PATH, 'wikipedia_c_{0}_{1}'.format(config.img_embedder, config.doc2vec_size))):
+                # Image Modality Model
+                if config.img_embedder == 'resnet18':
+                    img_embedder = Resnet18().to(device)
                 else:
-                    c = merged_feature
+                    raise argparse.ArgumentError
 
-                print('Calculating C done {0:%}'.format(idx / len(docs)), end="\r")
+                # Text Modality Model
+                if os.path.exists(os.path.join(PICKLE_PATH, 'wikipedia_doc2vec_embedder')):
+                    txt_embedder = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_doc2vec_embedder'), 'rb'))
+                else:
+                    doc_paths = glob.glob(os.path.join(DATA_PATH, 'wiki2vec', 'full_text', '*'))
+                    txts = [open(path, 'r', encoding='utf-8').read() for path in doc_paths]
+                    txts = [preprocess_string(txt, TEXT_FILTERS) for txt in txts]
+                    txt_embedder = Doc2Vec(txts, vector_size=config.doc2vec_size)
+                    pickle.dump(txt_embedder, open(os.path.join(PICKLE_PATH, 'wikipedia_doc2vec_embedder'), 'wb'))
+                docs = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_docs'), 'rb'))
 
-            pool.close()
+                pool = ThreadPool(5)
 
-            pickle.dump(c, open(
-                os.path.join(PICKLE_PATH, 'wikipedia_c_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)),
-                'wb'))
+                c = None
+
+                for idx, doc_title in enumerate(pool.imap(lambda x: x, docs)):
+                    img_paths = glob.glob(os.path.join(DATA_PATH, 'wiki2vec', 'images', str(idx) + '_*'))
+                    img_set = list()
+                    for path in img_paths:
+                        try:
+                            img = load_image(path, transform=img_embedder.transform, shape=(255, 255))
+                            img_set.append(img)
+                        except Exception:
+                            with open(os.path.join(BASE_DIR, 'bad_images'), 'a') as bad_img_io:
+                                bad_img_io.write(os.path.basename(path))
+
+                    with open(os.path.join(DATA_PATH, 'wiki2vec', 'full_text', str(idx)), 'r',
+                              encoding='utf-8') as txt_io:
+                        text = txt_io.read()
+
+                    img_feature = img_embedder.forward(img_set)
+                    text_feature = txt_embedder.forward(text)
+                    merged_feature = np.hstack((text_feature, img_feature))
+
+                    if c is not None:
+                        c = np.vstack((c, merged_feature))
+                    else:
+                        c = merged_feature
+
+                    print('Calculating C done {0:%}'.format(idx / len(docs)), end="\r")
+
+                pool.close()
+
+                pickle.dump(c, open(
+                    os.path.join(PICKLE_PATH, 'wikipedia_c_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)),
+                    'wb'))
+            else:
+                c = pickle.load(
+                    open(os.path.join(PICKLE_PATH,
+                                      'wikipedia_c_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)),
+                         'rb'))
         else:
-            c = pickle.load(
-                open(os.path.join(PICKLE_PATH, 'wikipedia_c_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)),
-                     'rb'))
+            for target_id in target_ids:
+                with open(os.path.join(DATA_PATH, 'wikipedia', 'raw_html', str(target_id)), 'r') as target_doc_io:
+                    print(target_doc_io.read())
 
         return c
     elif dataset == 'citation':
-        with open(os.path.join(DATA_PATH, 'citation-network', 'outputacm.txt'), 'r', encoding='utf-8') as test_io:
-            citations = test_io.read()
-
-        citations = citations.split('\n\n')
-        citations = [citation for citation in citations if '#!' in citation]
-
-        parsed_citations = dict()
-        abstracts = list()
-        indexes = list()
-        edges = list()
-        venues = list()
-        for idx, citation in enumerate(citations):
-            tokens = re.split(r'(#\*|#@|#!|#t|#c|#index|#%)', citation)
-            abstract = tokens[tokens.index('#!') + 1].strip()
-            venue = tokens[tokens.index('#c') + 1].strip()
-            ref_ids = [int(tokens[idx + 1].strip()) for idx, token in enumerate(tokens) if token == '#%']
-            if venue.strip() == '':
-                continue
-            index = int(tokens[tokens.index('#index') + 1])
-
-            abstracts.append(abstract)
-            indexes.append(index)
-            venues.append(venue)
-            for ref_id in ref_ids:
-                edges.append((index, ref_id))
-
-        # print(abstracts)
-        # print(indexes)
-        # print(venues)
-        # print(edges)
+        print('Preparing citaitions abstracts')
+        abstracts = pickle.load(open(os.path.join(PICKLE_PATH, 'citation_abstracts'), 'rb'))
         abstracts = [preprocess_string(abstract, TEXT_FILTERS) for abstract in abstracts]
-        txt_embedder = Doc2Vec(abstracts, vector_size=config.doc2vec_size)
-        pickle.dump(txt_embedder, open(os.path.join(PICKLE_PATH, 'citations_embedder')))
+
+        print('Preparing txt_embedder.')
+        if not os.path.exists(os.path.join(PICKLE_PATH, 'citation_doc2vec_embedder')):
+            txt_embedder = Doc2Vec(abstracts, vector_size=config.doc2vec_size)
+            pickle.dump(txt_embedder, open(os.path.join(PICKLE_PATH, 'citation_doc2vec_embedder'), 'wb'))
+        else:
+            txt_embedder = pickle.load(open(os.path.join(PICKLE_PATH, 'citation_doc2vec_embedder'), 'rb'))
+
+        c = None
+        abstracts = pickle.load(open(os.path.join(PICKLE_PATH, 'citation_abstracts'), 'rb'))
+        print('Preparing content vector.')
+        for idx, abstract in enumerate(abstracts):
+            text_feature = txt_embedder.forward(abstract)
+            if c is not None:
+                c = np.vstack((c, text_feature))
+            else:
+                c = text_feature
+
+            print('Calculating C done {0:%}'.format(idx / len(abstracts)), end="\r")
     return
 
 
@@ -151,12 +147,28 @@ def get_similarity_vectors(dataset):
 
         return s
     elif dataset == 'citation':
+        if not os.path.exists(
+                os.path.join(PICKLE_PATH, 'citation_s_{0}'.format(config.doc2vec_size))):
+            c = pickle.load(
+                open(os.path.join(PICKLE_PATH, 'citation_c_{0}'.format(config.doc2vec_size)),
+                     'rb'))
+
+            print('Calculating s.')
+            s = 1 - squareform(pdist(c, metric='cosine'))
+            print('Writing s into file.')
+            pickle.dump(s, open(os.path.join(PICKLE_PATH, 'citation_s_{0}'.format(config.doc2vec_size)), 'wb'), protocol=4)
+            print('Writing s into file done.')
+        else:
+            print('Loading s from file.')
+            s = pickle.load(open(os.path.join(PICKLE_PATH, 'citation_s_{0}'.format(config.doc2vec_size)), 'rb'))
+            print('Loading s from file done.')
+
+        return s
         pass
 
 
 def main(config):
-    """Get Content Vectors"""
-    c = get_content_vectors(dataset=config.dataset)
+    c = get_content_vectors(dataset=config.dataset, target_ids=doc_pool)
 
     v = c.copy()
 
@@ -197,8 +209,8 @@ def main(config):
         iteration_counter += 1
     pool.close()
 
-    pickle.dump(v, open(os.path.join(PICKLE_PATH, 'wikipedia_v_thr{0}'.format(config.threshold)), 'wb'))
-#
+    pickle.dump(v, open(os.path.join(PICKLE_PATH, '{0}_v_thr{1}'.format(config.dataset, config.threshold)), 'wb'))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

@@ -11,3 +11,17 @@ PAINTER_LIST_URL = ['https://en.wikipedia.org/wiki/List_of_painters_by_name_begi
 
 URL_STOP_WORDS = ['Help', 'File', 'Wikipedia', 'Special', 'Talk', 'Category', 'Template', 'Portal', 'ISO',
                   'List_of_']
+
+WIKIPEIDA_CATEGORIES = [
+    (['#$#$#$#$$#'], 'painter-origin'),
+    (['painters'], 'painter'),
+    (['people'], 'person'),
+    (['history'], 'history'),
+    (['actors'], 'actor'),
+    (['film'], 'film'),
+    (['music'], 'music'),
+    (['singers'], 'singer'),
+    (['cities', 'capitals'], 'city'),
+    (['countries'], 'country'),
+    (['universities'], 'university'),
+]
