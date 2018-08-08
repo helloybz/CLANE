@@ -5,50 +5,133 @@ import pickle
 from multiprocessing.pool import ThreadPool, Pool
 from time import sleep
 from urllib.parse import unquote
+from uuid import uuid4
 
-from scipy import spatial
-import torch
 import numpy as np
-
 from PIL import Image
 from bs4 import BeautifulSoup
+from scipy import spatial
 
 from helper import get
-from settings import DATA_PATH, PICKLE_PATH
+from settings import DATA_PATH, PICKLE_PATH, PAINTER_LIST_URL, URL_STOP_WORDS
 
 with open(os.path.join(PICKLE_PATH, 'doc_ids'), 'rb') as doc_mapping_io:
     doc_ids = pickle.load(doc_mapping_io)
 
 
-def _parse_text(soup):
-    try:
-        p_tags = soup.select('.mw-parser-output >  h2:nth-of-type(1)')[0].find_all_previous('p')
-    except IndexError:
-        p_tags = soup.select('.mw-parser-output > p')
+class DataProcessor:
+    def __init__(self, config):
+        if os.path.exists(os.path.join(PICKLE_PATH, 'network')):
+            self.network = pickle.load(open(os.path.join(PICKLE_PATH, 'network'), 'rb'))
+            self.painters = {key: value for key, value in self.network.items() if 'painter' in value['labels']}
 
-    abstract = ''.join([p.text for p in reversed(p_tags)])
-    full_text = ''.join([p.text for p in soup.select('.mw-parser-output > p')])
+        else:
+            # {idx: {'title': <DOC_TITLE>, 'refs': <REFS>, 'labels': <LABELS>}, ....}
+            self.network = dict()
 
-    return abstract, full_text
+        self.doc_idx = 0
+        self.do_task(config)
 
+    def do_task(self, config):
+        if config.get_raw_html:
+            self._get_raw_html(config.get_raw_html)
 
-def parse_html_to_texts(args):
-    doc_idx, file_name = args
+        if config.parse_html_text:
+            pool = ThreadPool(5)
+            raw_html_paths = glob.glob(os.path.join(DATA_PATH, 'raw_html', '*'))
 
-    with open(os.path.join(DATA_PATH, 'raw_html', file_name), 'r', encoding='utf-8') as html_io:
-        soup = BeautifulSoup(html_io.read(), 'html.parser')
+            for idx, _ in enumerate(pool.imap(self._parse_html_to_texts, raw_html_paths)):
+                print("Parse htmls to texts, done {0:%}".format(idx / len(raw_html_paths)), end='\r')
 
-    abstract, full_text = _parse_text(soup)
+    def _get_raw_html(self, param):
+        if 's' in param:
+            print('Get raw html - src docs')
+            doc_index_soups = [BeautifulSoup(get(url).text, 'html.parser') for url in PAINTER_LIST_URL]
 
-    if not os.path.exists(os.path.join(DATA_PATH, 'abstract', 'abstract_' + str(doc_idx))):
-        with open(os.path.join(DATA_PATH, 'abstract', 'abstract_' + str(doc_idx)), 'w',
-                  encoding='utf-8') as abstract_io:
-            abstract_io.write(abstract)
+            for doc_index_soup in doc_index_soups:
 
-    if not os.path.exists(os.path.join(DATA_PATH, 'full_text', 'full_text_' + str(doc_idx))):
-        with open(os.path.join(DATA_PATH, 'full_text', 'full_text_' + str(doc_idx)), 'w',
-                  encoding='utf-8') as full_text_io:
-            full_text_io.write(full_text)
+                src_anchors = doc_index_soup.select('.mw-parser-output ul li > a:nth-of-type(1)')
+                src_anchors = [src_anchor for src_anchor in src_anchors if 'redlink' not in src_anchor.attrs['href']]
+
+                for idx, anchor in enumerate(src_anchors):
+                    src_id, src_title = self._save_doc_from_anchor(anchor)
+
+                    if src_id not in self.network.keys():
+                        self.network[src_id] = {'title': src_title, 'refs': set(), 'labels': {'painter'}}
+                    else:
+                        print('Node already exists', src_id, src_title)
+
+                    print(doc_index_soup.title.text, '{0:%}'.format(idx / len(src_anchors)), end='\r')
+
+            pickle.dump(self.network, open(os.path.join(PICKLE_PATH, 'network'), 'wb'))
+
+        if 'r' in param:
+            print('Get raw html - ref docs')
+
+            srcs = {key: value for key, value in self.network.items() if 'painter' in value['labels']}
+
+            for src_idx, (src_id, src_value) in enumerate(srcs.items()):
+                with open(os.path.join(DATA_PATH, 'raw_html', src_id), 'r', encoding='utf-8') as source_io:
+                    src_soup = BeautifulSoup(source_io.read(), 'html.parser')
+
+                ref_anchors = src_soup.select(
+                    '.mw-parser-output > p > a[href^="/wiki/"], .mw-parser-output > p > i > a[href^="/wiki/"]')
+                ref_anchors = [ref_anchor for ref_anchor in ref_anchors if
+                               ref_anchor.attrs['href'].split('/wiki/')[-1].split(':')[0] not in URL_STOP_WORDS]
+
+                for ref_idx, ref_anchor in enumerate(ref_anchors):
+                    ref_id, ref_title = self._save_doc_from_anchor(ref_anchor)
+
+                    if ref_id in srcs.keys():
+                        self.network[src_id]['refs'].add(ref_id)
+                    else:
+                        self.network[ref_id] = {'title': ref_title, 'refs': set(), 'labels': set()}
+
+                    print('{0:%} {1:%}'.format((src_idx / len(srcs)), (ref_idx / len(ref_anchors))), end='\r')
+
+            pickle.dump(self.network, open(os.path.join(PICKLE_PATH, 'network'), 'wb'))
+
+    def _save_doc_from_anchor(self, anchor):
+        url = 'https://en.wikipedia.org' + anchor.attrs['href']
+        doc_soup = BeautifulSoup(get(url).text, 'html.parser')
+
+        doc_title = doc_soup.select_one('link[rel="canonical"]').attrs['href'].split('/')[-1]
+        doc_title = unquote(doc_title)
+
+        for idx, value in self.network.items():
+            if value['title'] == doc_title:
+                # already exists.
+                return idx, value['title']
+
+        doc_id = str(uuid4())
+
+        with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'w', encoding='utf-8') as doc_raw_html_io:
+            doc_raw_html_io.write(doc_soup.prettify())
+
+        return doc_id, doc_title
+
+    @staticmethod
+    def _parse_html_to_texts(html_path):
+        with open(html_path, 'r') as html_io:
+            soup = BeautifulSoup(html_io.read(), 'html.parser')
+
+        doc_id = os.path.basename(html_path)
+        try:
+            p_tags = soup.select('.mw-parser-output >  h2:nth-of-type(1)')[0].find_all_previous('p')
+        except IndexError:
+            p_tags = soup.select('.mw-parser-output > p')
+
+        abstract = ''.join([p.text for p in reversed(p_tags)])
+        full_text = ''.join([p.text for p in soup.select('.mw-parser-output > p')])
+
+        if not os.path.exists(os.path.join(DATA_PATH, 'abstract', doc_id)):
+            with open(os.path.join(DATA_PATH, 'abstract', doc_id), 'w', encoding='utf-8') as abstract_io:
+                abstract_io.write(abstract)
+
+        if not os.path.exists(os.path.join(DATA_PATH, 'full_text', doc_id)):
+            with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'w', encoding='utf-8') as full_text_io:
+                full_text_io.write(full_text)
+
 
 
 def checkup_images(args):
@@ -126,8 +209,12 @@ def get_ref_ids(args):
         if ref.has_attr('class') and 'mw-redirect' in ref.attrs['class']:
             sleep(1)
             try:
-                response = get('https://en.wikipedia.org/w/index.php?title=' + ref.attrs['href'].split('/')[-1].split('#')[0]+'&redirect=no')
-                ref_title = BeautifulSoup(response.text, 'html.parser').select_one('ul.redirectText a').attrs['href'].split('/')[-1]
+                response = get(
+                    'https://en.wikipedia.org/w/index.php?title=' + ref.attrs['href'].split('/')[-1].split('#')[
+                        0] + '&redirect=no')
+                ref_title = \
+                    BeautifulSoup(response.text, 'html.parser').select_one('ul.redirectText a').attrs['href'].split(
+                        '/')[-1]
             except AttributeError:
                 ref_title = ref.attrs['href'].split('/')[-1]
             except OSError:
@@ -135,7 +222,7 @@ def get_ref_ids(args):
 
         else:
             ref_title = ref.attrs['href'].split('/')[-1]
-            
+
         if unquote(ref_title) in doc_ids:
             ref_ids.append(doc_ids.index(unquote(ref_title)))
 
@@ -147,12 +234,7 @@ def calc_sim(v):
 
 
 def main(config):
-    # with open(os.path.join(PICKLE_PATH, 'doc_ids'), 'rb') as doc_mapping_io:
-    #     doc_ids = pickle.load(doc_mapping_io)
-    if config.parse_html_text:
-        pool = ThreadPool(3)
-        for idx, _ in enumerate(pool.imap(parse_html_to_texts, enumerate(doc_ids))):
-            print("Parse htmls to texsts, done {0:%}".format(idx / len(doc_ids)), end='\r')
+    DataProcessor(config)
 
     if config.checkup_images:
         pool = ThreadPool(3)
@@ -190,6 +272,7 @@ def main(config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--get_raw_html')
     parser.add_argument('--parse_html_text', action='store_true')
     parser.add_argument('--checkup_images', action='store_true')
     parser.add_argument('--build_network', action='store_true')

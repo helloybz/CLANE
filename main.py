@@ -43,9 +43,9 @@ def main(config):
 
     # Text Modality Model
     if config.doc2vec_text == 'abstract':
-        doc2vec_pickle_name = 'doc2vec_abstract'
+        doc2vec_pickle_name = 'doc2vec_abstract_' + str(config.doc2vec_size)
     elif config.doc2vec_text == 'full_text':
-        doc2vec_pickle_name = 'doc2vec_full_text'
+        doc2vec_pickle_name = 'doc2vec_full_text_' + str(config.doc2vec_size)
     else:
         raise argparse.ArgumentError
 
@@ -126,10 +126,11 @@ def main(config):
         is_converged = True
         max_delta = -np.inf
         for idx, results in enumerate(pool.imap(update_v, enumerate(doc_ids))):
-            #if results[0]:
+            # if results[0]:
             #	is_converged = results[0]
             max_delta = max(max_delta, results[1])
-            print('iter{0}  {1:%} done. delta: {2}'.format(iteration_counter, (idx/len(doc_ids)), max_delta), end='\r')
+            print('iter{0}  {1:%} done. delta: {2}'.format(iteration_counter, (idx / len(doc_ids)), max_delta),
+                  end='\r')
         is_converged = max_delta < config.threshold
         iteration_counter += 1
     pool.close()

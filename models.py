@@ -13,11 +13,16 @@ TEXT_FILTERS = [lambda x: x.lower(), strip_non_alphanum, strip_numeric, strip_mu
 
 
 class Resnet18(nn.Module):
+    """
+        Pretrained Resnet18 - detach last fc layer and
+    """
+
     def __init__(self):
         super(Resnet18, self).__init__()
-        self.resnet18_select = ['avgpool']
+        self.resnet18_select = ['maxpool2']
         self.resnet18 = models.resnet18(pretrained=True)
         self.resnet18._modules.popitem(last=True)
+        self.resnet18.add_module('maxpool2', nn.MaxPool2d(kernel_size=(2, 1)))
         self.transform = transforms.Compose([
             transforms.Lambda(lambda x: x.convert('RGB')),
             transforms.ToTensor(),
@@ -27,17 +32,17 @@ class Resnet18(nn.Module):
 
     def forward(self, img_set):
         with torch.no_grad():
+            sum_of_img_feature = None
             if len(img_set) != 0:
-                sum_of_img_feature = torch.zeros(512, 2, 2).to(device)
                 for idx, img in enumerate(img_set):
                     for name, layer in self.resnet18._modules.items():
                         img = layer(img)
                         if name in self.resnet18_select:
-                            sum_of_img_feature = sum_of_img_feature + img
-                return (sum_of_img_feature / len(img_set)).reshape(512 * 2 * 2).detach().cpu().numpy()
+                            sum_of_img_feature = sum_of_img_feature + img if sum_of_img_feature is not None else img
+                avg_img_feature = (sum_of_img_feature / len(img_set))
+                return avg_img_feature.reshape((1, -1)).detach().cpu().numpy()
             else:
-                return torch.zeros((512, 2, 2), dtype=torch.float).unsqueeze_(0).reshape(
-                    512 * 2 * 2).detach().cpu().numpy()
+                return torch.zeros((512, 2, 1), dtype=torch.float).unsqueeze_(0).reshape((1, -1)).detach().cpu().numpy()
 
 
 class Doc2Vec(nn.Module):
@@ -55,4 +60,4 @@ class Doc2Vec(nn.Module):
 
     def forward(self, text):
         corpus = gensim.utils.simple_preprocess(text)
-        return self.model.infer_vector(corpus)
+        return self.model.infer_vector(corpus).reshape((1, -1))
