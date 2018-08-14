@@ -10,6 +10,7 @@ from uuid import uuid4
 import numpy as np
 from PIL import Image
 from bs4 import BeautifulSoup
+from gensim.parsing import strip_multiple_whitespaces
 from scipy import spatial
 
 from helper import get
@@ -32,6 +33,9 @@ class DataProcessor:
         self.doc_idx = 0
         self.do_task(config)
 
+    def update_network(self):
+        self.network = pickle.load(open(os.path.join(PICKLE_PATH, 'network'), 'rb'))
+
     def do_task(self, config):
         if config.get_raw_html:
             self._get_raw_html(config.get_raw_html)
@@ -42,6 +46,10 @@ class DataProcessor:
 
             for idx, _ in enumerate(pool.imap(self._parse_html_to_texts, raw_html_paths)):
                 print("Parse htmls to texts, done {0:%}".format(idx / len(raw_html_paths)), end='\r')
+
+        if config.checkup_images:
+            self.update_network()
+            self.network.keys()
 
     def _get_raw_html(self, param):
         if 's' in param:
@@ -111,67 +119,51 @@ class DataProcessor:
         return doc_id, doc_title
 
     @staticmethod
-    def _parse_html_to_texts(html_path):
-        with open(html_path, 'r') as html_io:
+    def _parse_html_to_texts(html_path, forceful=False):
+        with open(html_path, 'r', encoding='utf-8') as html_io:
             soup = BeautifulSoup(html_io.read(), 'html.parser')
 
         doc_id = os.path.basename(html_path)
-        try:
-            p_tags = soup.select('.mw-parser-output >  h2:nth-of-type(1)')[0].find_all_previous('p')
-        except IndexError:
-            p_tags = soup.select('.mw-parser-output > p')
 
-        abstract = ''.join([p.text for p in reversed(p_tags)])
-        full_text = ''.join([p.text for p in soup.select('.mw-parser-output > p')])
+        full_text = ''.join([strip_multiple_whitespaces(p.text) for p in soup.select('.mw-parser-output > p')])
 
-        if not os.path.exists(os.path.join(DATA_PATH, 'abstract', doc_id)):
-            with open(os.path.join(DATA_PATH, 'abstract', doc_id), 'w', encoding='utf-8') as abstract_io:
-                abstract_io.write(abstract)
-
-        if not os.path.exists(os.path.join(DATA_PATH, 'full_text', doc_id)):
+        if not forceful:
+            if not os.path.exists(os.path.join(DATA_PATH, 'full_text', doc_id)):
+                with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'w', encoding='utf-8') as full_text_io:
+                    full_text_io.write(full_text)
+        else:
             with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'w', encoding='utf-8') as full_text_io:
                 full_text_io.write(full_text)
 
-
-
-def checkup_images(args):
-    idx, file_name = args
-
-    with open(os.path.join(DATA_PATH, 'raw_html', file_name), 'r', encoding='utf-8') as html_io:
-        soup = BeautifulSoup(html_io.read(), 'html.parser')
-
-    # img tags selected from the current version of a document.
-    img_a_tags = soup.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
-    # img paths of the document.
-    image_set = glob.glob(os.path.join(DATA_PATH, 'images', 'image_' + str(idx) + '_*'))
-
-    try:
-        if len(image_set) != len(img_a_tags):
-            raise Exception
-
-        for image in image_set:
-            img = Image.open(image)
-            img.close()
-
-    except Exception:
-        for invalid_image in image_set:
-            os.remove(invalid_image)
-        img_a_tags = _update_doc(idx, file_name, need_a_tags=True)
-        _update_images(idx, tags=img_a_tags)
-        checkup_images((idx, file_name))
-
-
-def _update_doc(idx, file_name, need_a_tags=False):
-    with open(os.path.join(DATA_PATH, 'raw_html', file_name), 'w', encoding='utf-8') as raw_html_io:
-        new_html = get('https://en.wikipedia.org/wiki/' + file_name).text
-        raw_html_io.write(new_html)
-        parse_html_to_texts((idx, file_name))
-
-    if need_a_tags:
-        with open(os.path.join(DATA_PATH, 'raw_html', file_name), 'r', encoding='utf-8') as html_io:
-            soup = BeautifulSoup(html_io.read(), 'html.parser')
-
-        return soup.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
+    # def _checkup_images(self, doc_id):
+    #
+    #     with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8') as html_io:
+    #         soup = BeautifulSoup(html_io.read(), 'html.parser')
+    #
+    #     # img tags selected from the current version of a document.
+    #     img_a_tags = soup.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
+    #     # img paths of the document.
+    #     image_set = glob.glob(os.path.join(DATA_PATH, 'images', doc_id + '_*'))
+    #
+    #     try:
+    #         if len(image_set) != len(img_a_tags):
+    #             raise Exception
+    #
+    #         for image in image_set:
+    #             img = Image.open(image)
+    #             img.close()
+    #
+    #     except Exception:
+    #         for invalid_image in image_set:
+    #             os.remove(invalid_image)
+    #
+    #         with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'w', encoding='utf-8') as raw_html_io:
+    #             new_html = get('https://en.wikipedia.org/wiki/' + self.network[doc_id]['title']).text
+    #             raw_html_io.write(new_html)
+    #         self._parse_html_to_texts(os.path.join(DATA_PATH, 'raw_html', doc_id), forceful=True)
+    #         img_a_tags =
+    #         _update_images(idx, tags=img_a_tags)
+    #         checkup_images((idx, file_name))
 
 
 def _update_images(idx, tags=None):
@@ -236,38 +228,38 @@ def calc_sim(v):
 def main(config):
     DataProcessor(config)
 
-    if config.checkup_images:
-        pool = ThreadPool(3)
-        for idx, _ in enumerate(pool.imap(checkup_images, enumerate(doc_ids))):
-            print('Check up image integrity, done {0:%}'.format(idx / len(doc_ids)), end='\r')
-
-        pool.close()
-
-    if config.build_network:
-        pool = Pool(10)
-        network = {str(idx): set([]) for idx, doc in enumerate(doc_ids)}
-        for idx, ref_ids in enumerate(pool.imap(get_ref_ids, enumerate(doc_ids))):
-            network[str(idx)] = set(ref_ids)
-            print('Build network relations, done {0:%}'.format(idx / len(doc_ids)), end='\r')
-
-        pool.close()
-        pickle.dump(network, open(os.path.join(PICKLE_PATH, 'network'), 'wb'))
-
-    if config.calc_s_c_x:
-        pool = Pool(5)
-        c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x'), 'rb'))
-        similarity_c_x = np.zeros((len(c_x), len(c_x)))
-        input_stuffs = [(c_x[i], c_x[j], i, j) for i in range(len(c_x)) for j in range(len(c_x)) if i >= j]
-        for idx, results in enumerate(pool.imap(calc_sim, input_stuffs)):
-            sim = results[0]
-            i = results[1]
-            j = results[2]
-            similarity_c_x[int(i)][int(j)] = sim
-            similarity_c_x[int(j)][int(i)] = sim
-            print('{0:%} done'.format(idx / len(input_stuffs)), end='\r')
-
-        pickle.dump(similarity_c_x, open(os.path.join(PICKLE_PATH, 's_c_x'), 'wb'))
-        pool.close()
+    # if config.checkup_images:
+    #     pool = ThreadPool(3)
+    #     for idx, _ in enumerate(pool.imap(checkup_images, enumerate(doc_ids))):
+    #         print('Check up image integrity, done {0:%}'.format(idx / len(doc_ids)), end='\r')
+    #
+    #     pool.close()
+    #
+    # if config.build_network:
+    #     pool = Pool(10)
+    #     network = {str(idx): set([]) for idx, doc in enumerate(doc_ids)}
+    #     for idx, ref_ids in enumerate(pool.imap(get_ref_ids, enumerate(doc_ids))):
+    #         network[str(idx)] = set(ref_ids)
+    #         print('Build network relations, done {0:%}'.format(idx / len(doc_ids)), end='\r')
+    #
+    #     pool.close()
+    #     pickle.dump(network, open(os.path.join(PICKLE_PATH, 'network'), 'wb'))
+    #
+    # if config.calc_s_c_x:
+    #     pool = Pool(5)
+    #     c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x'), 'rb'))
+    #     similarity_c_x = np.zeros((len(c_x), len(c_x)))
+    #     input_stuffs = [(c_x[i], c_x[j], i, j) for i in range(len(c_x)) for j in range(len(c_x)) if i >= j]
+    #     for idx, results in enumerate(pool.imap(calc_sim, input_stuffs)):
+    #         sim = results[0]
+    #         i = results[1]
+    #         j = results[2]
+    #         similarity_c_x[int(i)][int(j)] = sim
+    #         similarity_c_x[int(j)][int(i)] = sim
+    #         print('{0:%} done'.format(idx / len(input_stuffs)), end='\r')
+    #
+    #     pickle.dump(similarity_c_x, open(os.path.join(PICKLE_PATH, 's_c_x'), 'wb'))
+    #     pool.close()
 
 
 if __name__ == "__main__":
