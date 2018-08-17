@@ -2,7 +2,7 @@ import time
 
 import gensim
 import torch
-from gensim.parsing import strip_non_alphanum, strip_numeric, strip_multiple_whitespaces, strip_short
+from gensim.parsing import strip_non_alphanum, strip_numeric, strip_multiple_whitespaces, strip_short, preprocess_string
 
 from torch import nn
 from torchvision import models, transforms
@@ -59,5 +59,5 @@ class Doc2Vec(nn.Module):
         print("Training Doc2Vec done in %s seconds ___" % (time.time() - start_time))
 
     def forward(self, text):
-        corpus = gensim.utils.simple_preprocess(text)
+        corpus = preprocess_string(text, TEXT_FILTERS)
         return self.model.infer_vector(corpus).reshape((1, -1))

@@ -255,7 +255,7 @@ if __name__ == "__main__":
     main(config)
 
 
-def checkup_images( doc_id):
+def checkup_images(doc_id):
     with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8') as html_io:
         soup = BeautifulSoup(html_io.read(), 'html.parser')
 
@@ -274,10 +274,11 @@ def checkup_images( doc_id):
         for invalid_image in image_set:
             os.remove(invalid_image)
 
+        network = pickle.load(open(os.path.join(PICKLE_PATH, 'network'), 'rb'))
         with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'w', encoding='utf-8') as raw_html_io:
-            new_html = get('https://en.wikipedia.org/wiki/' + self.network[doc_id]['title']).text
+            new_html = get('https://en.wikipedia.org/wiki/' + network[doc_id]['title']).text
             raw_html_io.write(new_html)
-        self._parse_html_to_texts(os.path.join(DATA_PATH, 'raw_html', doc_id), forceful=True)
+        parse_html_to_texts(os.path.join(DATA_PATH, 'raw_html', doc_id), forceful=True)
         img_a_tags = BeautifulSoup(
             open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8'),
             'html.parser').select(
@@ -289,3 +290,20 @@ def checkup_images( doc_id):
                     img_io.write(response.content)
             else:
                 print(doc_id, 'https:' + tag.attrs['src'])
+
+
+def parse_html_to_texts(html_path, forceful=False):
+    with open(html_path, 'r', encoding='utf-8') as html_io:
+        soup = BeautifulSoup(html_io.read(), 'html.parser')
+
+    doc_id = os.path.basename(html_path)
+
+    full_text = ''.join([strip_multiple_whitespaces(p.text) for p in soup.select('.mw-parser-output > p')])
+
+    if not forceful:
+        if not os.path.exists(os.path.join(DATA_PATH, 'full_text', doc_id)):
+            with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'w', encoding='utf-8') as full_text_io:
+                full_text_io.write(full_text)
+    else:
+        with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'w', encoding='utf-8') as full_text_io:
+            full_text_io.write(full_text)
