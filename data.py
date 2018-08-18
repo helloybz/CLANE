@@ -225,8 +225,76 @@ def calc_sim(v):
     return 1 - 1 * spatial.distance.cosine(v[0], v[1]), v[2], v[3]
 
 
+def checkup_image(doc_id):
+    with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8') as html_io:
+        soup = BeautifulSoup(html_io.read(), 'html.parser')
+
+    img_a_tags = soup.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
+    image_set = glob.glob(os.path.join(DATA_PATH, 'images', doc_id + '_*'))
+
+    try:
+        if len(image_set) != len(img_a_tags):
+            raise Exception
+
+        for image in image_set:
+            img = Image.open(image)
+            img.close()
+
+    except Exception:
+        for invalid_image in image_set:
+            os.remove(invalid_image)
+
+        with open(os.path.join(PICKLE_PATH, 'network'), 'rb') as network_io:
+            network = pickle.load(network_io)
+            print(network[doc_id]['title'])
+
+        with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'w', encoding='utf-8') as raw_html_io:
+            new_html = get('https://en.wikipedia.org/wiki/' + network[doc_id]['title']).text
+            raw_html_io.write(new_html)
+            parse_html_to_texts(os.path.join(DATA_PATH, 'raw_html', doc_id), forceful=True)
+
+        with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8') as new_raw_html_io:
+            raw_html = BeautifulSoup(new_raw_html_io.read(), 'html.parser')
+        img_a_tags = raw_html.select(
+            '.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
+
+        idx = 0
+        for tag in img_a_tags:
+            response = get('https:' + tag.attrs['src'])
+            if not response.status_code == 404:
+                with open(os.path.join(DATA_PATH, 'images', doc_id + '_' + str(idx)), 'wb') as img_io:
+                    img_io.write(response.content)
+                    idx = idx + 1
+            else:
+                print(network[doc_id]['title'], 'https:' + tag)
+
+
+def parse_html_to_texts(html_path, forceful=False):
+    with open(html_path, 'r', encoding='utf-8') as html_io:
+        soup = BeautifulSoup(html_io.read(), 'html.parser')
+
+    doc_id = os.path.basename(html_path)
+
+    full_text = ''.join([strip_multiple_whitespaces(p.text) for p in soup.select('.mw-parser-output > p')])
+
+    if not forceful:
+        if not os.path.exists(os.path.join(DATA_PATH, 'full_text', doc_id)):
+            with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'w', encoding='utf-8') as full_text_io:
+                full_text_io.write(full_text)
+    else:
+        with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'w', encoding='utf-8') as full_text_io:
+            full_text_io.write(full_text)
+
+
 def main(config):
-    DataProcessor(config)
+    if config.checkup_images:
+        with open(os.path.join(PICKLE_PATH, 'network'), 'rb') as network_io:
+            ids = pickle.load(network_io).keys()
+        pool = ThreadPool(5)
+
+        for idx, _ in enumerate(pool.imap(checkup_image, ids)):
+            print('{0:%} done'.format(idx / len(ids)), end='\r')
+        pool.close()
     # if config.calc_s_c_x:
     #     pool = Pool(5)
     #     c_x = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x'), 'rb'))
@@ -253,58 +321,3 @@ if __name__ == "__main__":
     config = parser.parse_args()
     print(config)
     main(config)
-
-
-def checkup_images(doc_id):
-    print('checkup' + doc_id + 'imgaes')
-    with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8') as html_io:
-        soup = BeautifulSoup(html_io.read(), 'html.parser')
-
-    img_a_tags = soup.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
-    image_set = glob.glob(os.path.join(DATA_PATH, 'images', doc_id + '_*'))
-
-    try:
-        if len(image_set) != len(img_a_tags):
-            raise Exception
-
-        for image in image_set:
-            img = Image.open(image)
-            img.close()
-
-    except Exception as e:
-        print(e)
-        for invalid_image in image_set:
-            os.remove(invalid_image)
-
-        network = pickle.load(open(os.path.join(PICKLE_PATH, 'network'), 'rb'))
-        with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'w', encoding='utf-8') as raw_html_io:
-            new_html = get('https://en.wikipedia.org/wiki/' + network[doc_id]['title']).text
-            raw_html_io.write(new_html)
-        parse_html_to_texts(os.path.join(DATA_PATH, 'raw_html', doc_id), forceful=True)
-        with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8') as new_raw_html_io:
-            raw_html = img_a_tags = BeautifulSoup(new_raw_html_io.read(), 'html.parser')
-        img_a_tags = raw_html.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
-        for img_idx, tag in enumerate(img_a_tags):
-            response = get('https:' + tag.attrs['src'])
-            if not response.status_code == '404':
-                with open(os.path.join(DATA_PATH, 'images', doc_id + '_' + str(img_idx)), 'wb') as img_io:
-                    img_io.write(response.content)
-            else:
-                print(doc_id, 'https:' + tag.attrs['src'])
-
-
-def parse_html_to_texts(html_path, forceful=False):
-    with open(html_path, 'r', encoding='utf-8') as html_io:
-        soup = BeautifulSoup(html_io.read(), 'html.parser')
-
-    doc_id = os.path.basename(html_path)
-
-    full_text = ''.join([strip_multiple_whitespaces(p.text) for p in soup.select('.mw-parser-output > p')])
-
-    if not forceful:
-        if not os.path.exists(os.path.join(DATA_PATH, 'full_text', doc_id)):
-            with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'w', encoding='utf-8') as full_text_io:
-                full_text_io.write(full_text)
-    else:
-        with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'w', encoding='utf-8') as full_text_io:
-            full_text_io.write(full_text)
