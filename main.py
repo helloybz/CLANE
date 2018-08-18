@@ -11,11 +11,11 @@ from scipy.spatial import distance
 
 from data import checkup_images
 from models import device, Resnet18, TEXT_FILTERS, Doc2Vec
-from settings import DATA_PATH
+from settings import DATA_PATH, BASE_DIR
 from settings import PICKLE_PATH
 
 
-def _load_images(image_path, transform=None, max_size=None, shape=None):
+def _load_image(image_path, transform=None, max_size=None, shape=None):
     image = Image.open(image_path)
 
     if max_size:
@@ -33,13 +33,13 @@ def _load_images(image_path, transform=None, max_size=None, shape=None):
 
 
 def main(config):
-
     # Image Modality Model
     if config.img_embedder == 'resnet18':
         img_embedder = Resnet18().to(device)
     else:
         raise argparse.ArgumentError
 
+    # Text Modality Model
     if os.path.exists(os.path.join(PICKLE_PATH, 'doc2vec_embedder')):
         txt_embedder = pickle.load(open(os.path.join(PICKLE_PATH, 'doc2vec_embedder'), 'rb'))
     else:
@@ -51,38 +51,50 @@ def main(config):
 
     # Load or Calculate C_X
     if not os.path.exists(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}'.format(config.img_embedder, config.doc2vec_size))):
-        c_list = None
-        if not os.path.exists(os.path.join(PICKLE_PATH, 'ids')):
-            ids = [os.path.basename(path) for path in glob.glob(os.path.join(DATA_PATH, 'full_text', '*'))]
-            pickle.dump(ids, open(os.path.join(PICKLE_PATH, 'ids'), 'wb'))
-        else:
-            ids = pickle.load(open(os.path.join(PICKLE_PATH, 'ids'), 'rb'))
 
-        for idx, doc_id in enumerate(ids):
-            img_set = glob.glob(os.path.join(DATA_PATH, 'images', doc_id + '_*'))
-            while True:
+        network = pickle.load(open(os.path.join(PICKLE_PATH, 'network'), 'rb'))
+        ids = network.keys()
+        del network
+        c_x_dict = dict()
+
+        pool = ThreadPool(5)
+
+        for idx, doc_id in enumerate(pool.imap(lambda x: x, ids)):
+
+            img_paths = glob.glob(os.path.join(DATA_PATH, 'images', doc_id + '_*'))
+            img_set = list()
+            for path in img_paths:
                 try:
-                    img_set = [_load_images(path, transform=img_embedder.transform, shape=(255, 255)) for path in img_set]
-                    break
+                    img = _load_image(path, transform=img_embedder.transform, shape=(255, 255))
+                    img_set.append(img)
                 except Exception:
-                    print('Image load error.')
-                    checkup_images(doc_id)
-                    pass
+                    with open(os.path.join(BASE_DIR, 'bad_images'), 'a') as bad_img_io:
+                        bad_img_io.write(os.path.basename(path))
 
             with open(os.path.join(DATA_PATH, 'full_text', doc_id), 'r', encoding='utf-8') as txt_io:
-                txt_feature = txt_embedder.forward(txt_io.read())
+                text = txt_io.read()
+
             img_feature = img_embedder.forward(img_set)
-            merged_feature = np.hstack((txt_feature, img_feature))
-            if c_list is not None:
-                c_list = np.vstack((c_list, merged_feature))
-            else:
-                c_list = merged_feature
-            print('Calculating C_X done {0:%} {1:}'.format(idx / len(ids), c_list.shape), end="\r")
+            text_feature = txt_embedder.forward(text)
+            merged_feature = np.hstack((text_feature, img_feature))
 
-        pickle.dump(c_list, open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)), 'wb'))
+            c_x_dict[doc_id] = merged_feature
 
-    else:
-        c_list = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)), 'rb'))
+            print('Calculating C_X done {0:%}'.format(idx / len(ids)), end="\r")
+
+        pool.close()
+
+        pickle.dump(c_x_dict, open(os.path.join(PICKLE_PATH, 'c_x_dict_{0}_{1}'.format(config.img_embedder, config.doc2vec_size))))
+    #         if c_list is not None:
+    #             c_list = np.vstack((c_list, merged_feature))
+    #         else:
+    #             c_list = merged_feature
+    #         print('Calculating C_X done {0:%} {1:}'.format(idx / len(ids), c_list.shape), end="\r")
+    #
+    #     pickle.dump(c_list, open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)), 'wb'))
+    #
+    # else:
+    #     c_list = pickle.load(open(os.path.join(PICKLE_PATH, 'c_x_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)), 'rb'))
 
     # v_list = c_list.copy()
     #

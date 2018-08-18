@@ -256,6 +256,7 @@ if __name__ == "__main__":
 
 
 def checkup_images(doc_id):
+    print('checkup' + doc_id + 'imgaes')
     with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8') as html_io:
         soup = BeautifulSoup(html_io.read(), 'html.parser')
 
@@ -270,7 +271,8 @@ def checkup_images(doc_id):
             img = Image.open(image)
             img.close()
 
-    except Exception:
+    except Exception as e:
+        print(e)
         for invalid_image in image_set:
             os.remove(invalid_image)
 
@@ -279,10 +281,9 @@ def checkup_images(doc_id):
             new_html = get('https://en.wikipedia.org/wiki/' + network[doc_id]['title']).text
             raw_html_io.write(new_html)
         parse_html_to_texts(os.path.join(DATA_PATH, 'raw_html', doc_id), forceful=True)
-        img_a_tags = BeautifulSoup(
-            open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8'),
-            'html.parser').select(
-            '.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
+        with open(os.path.join(DATA_PATH, 'raw_html', doc_id), 'r', encoding='utf-8') as new_raw_html_io:
+            raw_html = img_a_tags = BeautifulSoup(new_raw_html_io.read(), 'html.parser')
+        img_a_tags = raw_html.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
         for img_idx, tag in enumerate(img_a_tags):
             response = get('https:' + tag.attrs['src'])
             if not response.status_code == '404':
