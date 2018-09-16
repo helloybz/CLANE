@@ -1,4 +1,5 @@
 import os
+import pickle
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -12,8 +13,16 @@ PAINTER_LIST_URL = ['https://en.wikipedia.org/wiki/List_of_painters_by_name_begi
 URL_STOP_WORDS = ['Help', 'File', 'Wikipedia', 'Special', 'Talk', 'Category', 'Template', 'Portal', 'ISO',
                   'List_of_']
 
-WIKIPEIDA_CATEGORIES = [
-    (['#$#$#$#$$#'], 'painter-origin'),
+MINIMUM_IMG_NUMBER = 3
+
+
+ART_MOVEMENTS = pickle.load(open(os.path.join(PICKLE_PATH, 'art_movements'), 'rb'))
+NATION_CATEGORIES = [
+    (['japanease', 'japan'], 'japan'),
+    (['chinese', 'china'], 'china'),
+    (['american', 'america'], 'america'),
+]
+WIKIPEDIA_CATEGORIES = [
     (['painters'], 'painter'),
     (['people'], 'person'),
     (['history'], 'history'),
@@ -23,5 +32,10 @@ WIKIPEIDA_CATEGORIES = [
     (['singers'], 'singer'),
     (['cities', 'capitals'], 'city'),
     (['countries'], 'country'),
-    (['universities'], 'university'),
-]
+    (['universities', 'colleges'], 'university'),
+    (['schools'], 'school'),
+] + ART_MOVEMENTS + NATION_CATEGORIES
+
+# https://en.wikipedia.org/wiki/List_of_art_movements
+
+
