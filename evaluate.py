@@ -9,11 +9,15 @@ import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn import svm
 from sklearn.cluster import KMeans, SpectralClustering
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
+from sklearn.model_selection import train_test_split
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.preprocessing import MultiLabelBinarizer
 
-from settings import PICKLE_PATH, BASE_DIR, WIKIPEDIA_CATEGORIES
+from settings import PICKLE_PATH, BASE_DIR, WIKIPEDIA_CATEGORIES, ART_MOVEMENTS
 
 # local helpers
 COLOR_MAP = ['red', 'blue', 'green']
@@ -34,19 +38,9 @@ def dim_reduce_pca(emb):
 
 # clustering methods
 def clustering_kmeans(embeddings, n_clusters):
-    if not os.path.exists(
-            os.path.join(PICKLE_PATH, '{0}_{1}_cluster{2}'.format(config.dataset, config.method, config.n_clusters))):
-        model = KMeans(n_clusters=n_clusters)
-        model = model.fit(embeddings)
-        pickle.dump(model, open(
-            os.path.join(PICKLE_PATH, '{0}_{1}_cluster{2}'.format(config.dataset, config.method, config.n_clusters)),
-            'wb'))
-        return model.predict(embeddings)
-    else:
-        model = pickle.load(open(
-            os.path.join(PICKLE_PATH, '{0}_{1}_cluster{2}'.format(config.dataset, config.method, config.n_clusters)),
-            'rb'))
-        return model.predict(embeddings)
+    model = KMeans(n_clusters=n_clusters)
+    model = model.fit(embeddings)
+    return model.predict(embeddings)
 
 
 def clustering_spectral(embeddings, n_clusters):
@@ -60,6 +54,11 @@ def clustering_spectral(embeddings, n_clusters):
     else:
         y_pred = model.predict(embeddings)
     return y_pred
+
+
+def classifying_svc(embeddings, labels):
+    clf = svm.SVC(kernel='linear')
+    pass
 
 
 # Save result as image
@@ -90,12 +89,18 @@ def summarize_clustering_result(pred, v, target_doc_idx=None):
             groups[cluster_idx].append((doc_idx, docs[doc_idx]))
 
     if config.score_metric == 'silhouette':
-        average_score = silhouette_score(X=v, labels=pred, sample_size=int(len(pred)*0.75))
+        average_score = silhouette_score(X=v, labels=pred, sample_size=int(len(pred) * 0.75))
+    elif config.score_metric == 'none':
+        pass
     else:
         average_score = silhouette_score(X=v, labels=pred)
 
     with open(os.path.join(BASE_DIR, 'output'), 'w', encoding='utf-8') as output_io:
-        output_io.write('Average {} Score: {}\n'.format(config.score_metric, average_score))
+        if config.score_metric != 'none':
+            output_io.write('Average {} Score: {}\n'.format(config.score_metric, average_score))
+        else:
+            pass
+
         for group_idx, group in enumerate(groups):
             output_io.write('Cluster {0}\n'.format(group_idx))
             output_io.write('\tNumber of docs: {0}\n'.format(len(group)))
@@ -104,7 +109,8 @@ def summarize_clustering_result(pred, v, target_doc_idx=None):
                 if len(target_docs) != 0:
                     try:
                         output_io.write(
-                            '# {0}:\t{1}\t({2:.2f}%)\n'.format(category, len(target_docs), 100 * len(target_docs) / len(group)))
+                            '# {0}:\t{1}\t({2:.2f}%)\n'.format(category, len(target_docs),
+                                                               100 * len(target_docs) / len(group)))
                     except ZeroDivisionError:
                         pass
 
@@ -114,40 +120,73 @@ def summarize_clustering_result(pred, v, target_doc_idx=None):
             # painter_docs = [doc for index, doc in group if labels[index] == {'painter'}]
 
 
+def summarize_classifying_result(pred):
+    print(pred)
+
+
 def main(config):
     labels = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_labels'), 'rb'))
 
-    "clustering"
-    v = pickle.load(open(os.path.join(PICKLE_PATH, '{}_v_thr{}_{}_{}'.format(config.dataset, config.threshold, config.img_embedder, config.doc2vec_size)), 'rb'))
+    v = pickle.load(open(os.path.join(PICKLE_PATH, '{}_v_{}_txt{}_thr{}_a{}'.format(
+        config.dataset,
+        config.img_embedder,
+        config.doc2vec_size,
+        config.threshold,
+        config.alpha,
+        config.sim_metric,
+    )), 'rb'))
 
     if config.target_class != 'all':
-        target_doc_idx = [idx for idx, label in enumerate(labels) if 'painter' in label]
-        v = v[target_doc_idx, :]
-    else:
-        target_doc_idx = None
+        target_doc_idx = [idx for idx, label in enumerate(labels) if config.target_class in label]
+        v = v[target_doc_idx,]
+        labels = [label for idx, label in enumerate(labels) if config.target_class in label]
+        del target_doc_idx
+
+    # split into train & test if classifying.
+    if 'classifying' in config.method:
+        mlb = MultiLabelBinarizer()
+        labels = mlb.fit_transform(labels)
+        v_train, v_test, y_train, y_test = train_test_split(v, labels)
+        del mlb
 
     if config.method == 'spectral_clustering':
         pred = clustering_spectral(embeddings=v, n_clusters=config.n_cluster)
     elif config.method == 'kmeans_clustering':
         pred = clustering_kmeans(embeddings=v, n_clusters=config.n_clusters)
+    elif config.method == 'SVC_classifying':
+        clf = svm.SVC(kernel='linear')
+        multi_label_clf = OneVsRestClassifier(clf)
+        multi_label_clf.fit(X=v_train, y=y_train)
+        multi_label_clf.predict(X=v_test)
+        pred = multi_label_clf.score(X=v_test, y=y_test)
     else:
-        pred = None
+        raise ValueError
 
-    summarize_clustering_result(pred=pred, target_doc_idx=target_doc_idx, v=v)
-
-    "classifier"
+    if 'clustering' in config.method:
+        summarize_clustering_result(pred=pred, target_doc_idx=target_doc_idx, v=v)
+    elif 'classifying' in config.method:
+        summarize_classifying_result(pred=pred)
+    else:
+        pass
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+
+    # V config
     parser.add_argument('--dataset', type=str, default='wikipedia')
-    parser.add_argument('--method', type=str, default='kmeans_clustering')
-    parser.add_argument('--score_metric', type=str, default='silhouette')
-    parser.add_argument('--n_clusters', type=int, default=30)
-    parser.add_argument('--threshold', type=str, default='0.001')
-    parser.add_argument('--img_embedder', type=str, default='resnet18')
+    parser.add_argument('--img_embedder', type=str, default='resnet152')
     parser.add_argument('--doc2vec_size', type=int, default=1024)
+    parser.add_argument('--sim_metric', type=str, default='cosine_C')
+    parser.add_argument('--alpha', type=float, default=0.9)
+    parser.add_argument('--threshold', type=str, default='0.001')
+
+    # Evaluation config
+    parser.add_argument('--n_clusters', type=int, default=30)
+    parser.add_argument('--score_metric', type=str, default='silhouette')
     parser.add_argument('--target_class', type=str, default='painter')
+    parser.add_argument('--method', type=str, default='SVC_classifying')
+
     config = parser.parse_args()
     print(config)
     main(config)

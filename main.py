@@ -2,35 +2,36 @@ import argparse
 import glob
 import os
 import pickle
-import re
 from multiprocessing.pool import ThreadPool
 
 import numpy as np
-from PIL import Image
 from gensim.parsing.preprocessing import preprocess_string
-from scipy.spatial.distance import pdist, euclidean, squareform, cosine
+from scipy.spatial.distance import euclidean, cosine
+from torch.nn import functional as F
+import torch
 
 from data import checkup_images
+from helper import load_image
 from models import device, Resnet18, TEXT_FILTERS, Doc2Vec, Resnet152
 from settings import DATA_PATH, BASE_DIR
 from settings import PICKLE_PATH
 
 
-def load_image(image_path, transform=None, max_size=None, shape=None):
-    image = Image.open(image_path)
-
-    if max_size:
-        scale = max_size / max(image.size)
-        size = np.array(image.size) * scale
-        image = image.resize(size.astype(int), Image.ANTIALIAS)
-
-    if shape:
-        image = image.resize(shape, Image.LANCZOS)
-
-    if transform:
-        image = transform(image).unsqueeze_(0)
-
-    return image.to(device)
+# def load_image(image_path, transform=None, max_size=None, shape=None):
+#     image = Image.open(image_path)
+#
+#     if max_size:
+#         scale = max_size / max(image.size)
+#         size = np.array(image.size) * scale
+#         image = image.resize(size.astype(int), Image.ANTIALIAS)
+#
+#     if shape:
+#         image = image.resize(shape, Image.LANCZOS)
+#
+#     if transform:
+#         image = transform(image).unsqueeze_(0)
+#
+#     return image.to(device)
 
 
 def get_content_vectors(dataset):
@@ -71,7 +72,7 @@ def get_content_vectors(dataset):
                     img_set = list()
                     for path in img_paths:
                         try:
-                            img = load_image(path, transform=img_embedder.transform, shape=(224, 224))
+                            img = load_image(path, transform=img_embedder.transform, shape=(224, 224)).to(device)
                             img_set.append(img)
                         except Exception:
                             with open(os.path.join(BASE_DIR, 'bad_images'), 'a') as bad_img_io:
@@ -81,14 +82,14 @@ def get_content_vectors(dataset):
                               encoding='utf-8') as txt_io:
                         text = txt_io.read()
                     try:
-                        img_feature = img_embedder.forward(img_set)
+                        img_feature = img_embedder(img_set)
                         break
                     except FileNotFoundError:
                         labels = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_labels'), 'rb'))
                         checkup_images(doc_idx=doc_id, doc_title=doc_title, doc_labels=labels[doc_id])
 
                 text_feature = txt_embedder.forward(text)
-                merged_feature = np.hstack((text_feature, img_feature))
+                merged_feature = np.hstack((F.normalize(torch.Tensor(text_feature)), F.normalize(img_feature)))
 
                 if c is not None:
                     c = np.vstack((c, merged_feature))
@@ -160,35 +161,12 @@ def get_similarity_vectors(dataset, **kwargs):
                 print(c[edge[0]])
                 print(c[edge[1]])
                 break
-            # s = 1 - squareform(pdist(c, metric='cosine'))
-            # print('Writing s into file.')
-            # pickle.dump(s, open(os.path.join(PICKLE_PATH, 'wikipedia_s_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)), 'wb'), protocol=4)
-            # print('Writing s into file done.')
         else:
             print('Loading s from file.')
             s = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_s_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)), 'rb'))
             print('Loading s from file done.')
 
         return s
-#     elif dataset == 'citation':
-#         if not os.path.exists(
-#                 os.path.join(PICKLE_PATH, 'citation_s_{0}'.format(config.doc2vec_size))):
-#             c = pickle.load(
-#                 open(os.path.join(PICKLE_PATH, 'citation_c_{0}'.format(config.doc2vec_size)),
-#                      'rb'))
-#
-#             print('Calculating s.')
-#             s = 1 - squareform(pdist(c, metric='cosine'))
-#             print('Writing s into file.')
-#             pickle.dump(s, open(os.path.join(PICKLE_PATH, 'citation_s_{0}'.format(config.doc2vec_size)), 'wb'), protocol=4)
-#             print('Writing s into file done.')
-#         else:
-#             print('Loading s from file.')
-#             s = pickle.load(open(os.path.join(PICKLE_PATH, 'citation_s_{0}'.format(config.doc2vec_size)), 'rb'))
-#             print('Loading s from file done.')
-#
-#         return s
-#         pass
 
 
 def main(config):
@@ -242,7 +220,14 @@ def main(config):
         iteration_counter += 1
     pool.close()
 
-    pickle.dump(v, open(os.path.join(PICKLE_PATH, '{0}_v_thr{1}_a{2}'.format(config.dataset, config.threshold, config.alpha)), 'wb'))
+    pickle.dump(v, open(os.path.join(PICKLE_PATH, '{}_v_{}_txt{}_thr{}_a{}'.format(
+        config.dataset,
+        config.img_embedder,
+        config.doc2vec_size,
+        config.sim_metric,
+        config.alpha,
+        config.threshold,
+    )), 'wb'))
 
 
 if __name__ == '__main__':

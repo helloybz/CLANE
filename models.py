@@ -43,7 +43,7 @@ class Resnet18(nn.Module):
 class Resnet152(nn.Module):
     def __init__(self):
         super(Resnet152, self).__init__()
-        self.resnet152_select = ['maxpool2']
+        # self.resnet152_select = ['maxpool2']
         self.resnet152 = models.resnet152(pretrained=True)
         self.resnet152._modules.popitem(last=True)
         # self.resnet152.add_module('maxpool2', nn.MaxPool2d(kernel_size=(2, 1)))
@@ -63,7 +63,7 @@ class Resnet152(nn.Module):
                         img = layer(img)
                     sum_of_img_feature = sum_of_img_feature + img if sum_of_img_feature is not None else img
                 avg_img_feature = (sum_of_img_feature / len(img_set))
-                return avg_img_feature.reshape((1, -1)).detach().cpu().numpy()
+                return avg_img_feature.reshape((1, -1)).detach().cpu()
             else:
                 raise FileNotFoundError
                 # return torch.zeros((512, 2, 1), dtype=torch.float).unsqueeze_(0).reshape((1, -1)).detach().cpu().numpy()

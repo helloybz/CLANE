@@ -4,36 +4,46 @@ import os
 import pickle
 import re
 from io import BytesIO
-from multiprocessing.pool import ThreadPool, Pool
+from multiprocessing.pool import ThreadPool
 from urllib.parse import unquote
 
 from PIL import Image
 from bs4 import BeautifulSoup
 from gensim.parsing import strip_multiple_whitespaces
+import nltk
 
 from helper import get
-from settings import DATA_PATH, PICKLE_PATH, URL_STOP_WORDS, BASE_DIR, WIKIPEDIA_CATEGORIES, MINIMUM_IMG_NUMBER
+from settings import DATA_PATH, PICKLE_PATH, URL_STOP_WORDS, BASE_DIR, MINIMUM_IMG_NUMBER, ART_MOVEMENTS_KEYWORDS, \
+    ART_MOVEMENTS_DICT
 
 
 def save_img(args, url=False):
     img_idx = args[0]
     doc_idx, tag = args[1]
+
     try:
         url = 'https:' + tag.attrs['src'] if not url else tag
-        r = get(url)
-        img = Image.open(BytesIO(r.content))
+        response = get(url)
+        img = Image.open(BytesIO(response.content))
         img = img.convert('RGB')
-        # print(str(doc_idx) + '_' + str(img_idx) + '.jpg')
-        img.save(os.path.join(DATA_PATH, 'wiki2vec', 'images', str(doc_idx) + '_' + str(img_idx) + '.jpg'))
+        img.save(os.path.join(DATA_PATH,
+                              'wiki2vec',
+                              'images',
+                              str(doc_idx) + '_' + str(img_idx) + '.jpg'))
     except Exception as e:
         print(e)
-        pass
 
 
 def get_soup_and_title(doc_key):
     if type(doc_key) == int:
-        with open(os.path.join(DATA_PATH, 'wiki2vec', 'raw_html', str(doc_key)), 'r', encoding='utf-8') as html_io:
+        with open(os.path.join(DATA_PATH,
+                               'wiki2vec',
+                               'raw_html',
+                               str(doc_key)),
+                  'r',
+                  encoding='utf-8') as html_io:
             soup = BeautifulSoup(html_io.read(), 'html.parser')
+
     elif type(doc_key) == str:
         url = 'https://en.wikipedia.org' + doc_key
         soup = BeautifulSoup(get(url).text, 'html.parser')
@@ -43,30 +53,101 @@ def get_soup_and_title(doc_key):
     return soup, title
 
 
-def _check_category(patterns, cats):
-    for cat in cats:
-        for pattern in patterns:
-            if pattern in cat:
-                return True
-    return False
-
-
 def checkup_images(doc_idx, doc_title, doc_labels):
     existing_images = glob.glob(os.path.join(DATA_PATH, 'wiki2vec', 'images', str(doc_idx) + '_*'))
     if len(existing_images) < 3:
         if 'painter' in doc_labels:
-            q = 'https://www.google.co.kr/search?q=' + doc_title.replace('_', '+') + '+Paintings' + '&source=lnms&tbm=isch'
+            q = 'https://www.google.co.kr/search?q=' + doc_title.replace('_',
+                                                                         '+') + '+Paintings' + '&source=lnms&tbm=isch'
         else:
             print('No images:', doc_idx, doc_title, len(existing_images), end='\n')
-            q = 'https://www.google.co.kr/search?q=' + doc_title + '&source=lnms&tbm=isch'
+            q = 'https://www.google.co.kr/search?q=' + doc_title.replace('_', '+') + '&source=lnms&tbm=isch'
 
         response = get(q)
         imgs = BeautifulSoup(response.text, 'html.parser').select('img[src^="https://"]')[:MINIMUM_IMG_NUMBER]
         imgs = [img.attrs['src'] for img in imgs]
+        print('imgs', imgs)
 
         # print(imgs)
         for img_idx, img in enumerate(imgs):
             save_img((img_idx + len(existing_images), (doc_idx, img)), url=True)
+
+
+def _label_painters(doc_idx):
+    """
+    art movement labelling 우선순위:
+    1. (painter의 경우) infobox의 movement
+    2. category에 명시적으로 나타난 art movement
+    3. abstract 내 anchor tag로 존재하는 art movement
+    4. (1,2,3 모두 안되면) full text에서 art movement 관련 모든 keyword를 뽑고,
+       가장 많이 나타나는 art movement.
+
+    4번 같은 경우는, labelling 따로 하지말고 특이 케이스로 분류해서 설명하는게 나은 경우도 있다.
+        ex)Herb Aach
+    """
+    with open(os.path.join(DATA_PATH, 'wiki2vec', 'raw_html', str(doc_idx)), 'r', encoding='utf-8') as doc_html_io:
+        soup = BeautifulSoup(doc_html_io.read(), 'html.parser')
+
+    doc_labels = []
+    # art_movement_classes = [label for key, label in ART_MOVEMENTS]
+
+    # 1 // 1066개
+    infobox = soup.select_one('.infobox.biography')
+    if infobox:
+        try:
+            if 'Movement' in [th.text.strip() for th in infobox.select('th')]:
+                for th in infobox.select('th'):
+                    if th.text.strip() == 'Movement':
+                        for a in th.parent.select('td a[href^="/wiki"]'):
+                            if 'class' in a.attrs.keys() and 'mw-redirect' in a.attrs['class']:
+                                response = get('https://en.wikipedia.org' + a.attrs['href'])
+                                label = BeautifulSoup(response.text, 'html.parser').title.text.split('- Wiki')[
+                                    0].strip()
+                            else:
+                                label = a.attrs['title'].strip()
+
+                            if label in ART_MOVEMENTS_KEYWORDS:
+                                doc_labels.append(label)
+                return set(doc_labels), doc_idx
+        except Exception:
+            print('ERROR at', soup.title.text.strip())
+            raise
+    # 2 // 2708 - 1066 개
+    elif soup.select_one('#mw-normal-catlinks'):
+        categories = soup.select_one('#mw-normal-catlinks').select('ul li a')
+        categories = [category.attrs['title'].split(':')[-1] for category in categories]
+
+        tokens = list()
+        for category in categories:
+            tokenized_category = nltk.word_tokenize(category)
+            pos_tag = [idx for idx, (word, pos) in enumerate(nltk.pos_tag(tokenized_category)) if
+                       pos in ['IN', 'TO', 'VBG']]
+            tokens.append(tokenized_category[:pos_tag[0]] if len(pos_tag) != 0 else tokenized_category)
+        tokens = set(sum(tokens, []))
+        tokens = [token.lower() for token in tokens]
+        filtered_tokens = set(tokens).intersection(ART_MOVEMENTS_DICT.keys())
+
+        if len(filtered_tokens) != 0:
+            doc_labels = [ART_MOVEMENTS_DICT[token] for token in filtered_tokens]
+            return set(doc_labels), doc_idx
+        # 3 //
+        else:
+            abstract_anchors = soup.select('.mw-parser-output > p')[0].select('a[href^="/wiki"]')
+            # print([anchor.text.strip() for anchor in abstract_anchors])
+
+            for anchor in abstract_anchors:
+                if 'class' in anchor.attrs.keys() and 'mw-redirect' in anchor.attrs['class']:
+                    html = get('https://en.wikipedia.org' + anchor.attrs['href']).text
+                    title = BeautifulSoup(html, 'html.parser').title.text.split('-')[0].strip()
+                else:
+                    title = anchor.attrs['href'].split('/')[-1].strip().replace('_', ' ')
+
+                if title in ART_MOVEMENTS_KEYWORDS:
+                    doc_labels.append(title)
+
+            return set(doc_labels), doc_idx
+
+    return {'painter'}, doc_idx
 
 
 def main(config):
@@ -113,7 +194,7 @@ def main(config):
                 imgs = BeautifulSoup(response.text, 'html.parser').select('img[src^="https://"]')[:MINIMUM_IMG_NUMBER]
 
                 for img_idx, img in enumerate(imgs):
-                    save_img((img_idx+len(img_tags), (doc_idx, img)), url=True)
+                    save_img((img_idx + len(img_tags), (doc_idx, img)), url=True)
 
             if src_title not in docs:
                 docs.append(src_title)
@@ -132,25 +213,29 @@ def main(config):
                     with open(os.path.join(BASE_DIR, 'test.txt'), 'a') as missing_io:
                         missing_io.write(ref_title + ' not exists in docs. (ref)')
 
-                print('{0} {1} {2} {3}'.format(target_doc_counter, len(target_docs), ref_doc_counter, len(ref_anchors)), end='\r')
+                print('{0} {1} {2} {3}'.format(target_doc_counter, len(target_docs), ref_doc_counter, len(ref_anchors)),
+                      end='\r')
 
                 if ref_title not in docs:
                     docs.append(ref_title)
                     labels.append(set())
-                    with open(os.path.join(DATA_PATH, 'wiki2vec', 'raw_html', str(docs.index(ref_title))), 'w', encoding='utf-8') as raw_html_io:
+                    with open(os.path.join(DATA_PATH, 'wiki2vec', 'raw_html', str(docs.index(ref_title))), 'w',
+                              encoding='utf-8') as raw_html_io:
                         raw_html_io.write(ref_soup.prettify())
 
                 full_text = ''.join(
                     [strip_multiple_whitespaces(p.text) for p in ref_soup.select('.mw-parser-output > p')])
 
-                with open(os.path.join(DATA_PATH, 'wiki2vec', 'full_text', str(docs.index(ref_title))), 'w', encoding='utf-8') as full_text_io:
+                with open(os.path.join(DATA_PATH, 'wiki2vec', 'full_text', str(docs.index(ref_title))), 'w',
+                          encoding='utf-8') as full_text_io:
                     full_text_io.write(full_text)
 
-                img_tags = ref_soup.select('.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
+                img_tags = ref_soup.select(
+                    '.mw-parser-output > .infobox a.image > img, .mw-parser-output .thumb  a.image > img')
 
-                for img_idx, tag in enumerate(pool.map(save_img, enumerate([(str(docs.index(ref_title)), tag) for tag in img_tags]))):
+                for img_idx, tag in enumerate(
+                        pool.map(save_img, enumerate([(str(docs.index(ref_title)), tag) for tag in img_tags]))):
                     pass
-
 
                 if (docs.index(src_title), docs.index(ref_title)) not in edges:
                     edges.append((docs.index(src_title), docs.index(ref_title)))
@@ -173,48 +258,19 @@ def main(config):
 
     elif config.wiki_label:
         docs = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_docs'), 'rb'))
-        if os.path.exists(os.path.join(PICKLE_PATH, 'wikipeida_labels')):
-            labels = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_labels'), 'rb'))
-        else:
-            labels = []
-        # labels = []
+        labels = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_labels'), 'rb'))
 
-        import nltk
+        pool = ThreadPool(7)
 
-        def _process_labeling(args):
-            doc_idx, doc = args
-            with open(os.path.join(DATA_PATH, 'wiki2vec', 'raw_html', str(doc_idx)), 'rb') as doc_io:
-                soup = BeautifulSoup(doc_io.read(), 'html.parser')
-                try:
-                    cats = soup.select_one('#mw-normal-catlinks').select('ul li a')
-                except AttributeError:
-                    cats = []
-                cats = [cat.text.strip().lower() for cat in cats]
-                docs_labels = list()
-                for cat in cats:
-                    tokenized_cat = nltk.word_tokenize(cat)
-                    tagged_cat = nltk.pos_tag(tokenized_cat)
-                    pos = [idx for idx, tag in enumerate(tagged_cat) if tag[1] in ['IN', 'TO']]
-                    if len(pos) != 0:
-                        tokenized_cat = tokenized_cat[:pos[0]]
-                    tokenized_cat = [token.lower() for token in tokenized_cat]
-                    new_labels = list()
-                    for patterns, category in WIKIPEDIA_CATEGORIES:
-                        for pattern in patterns:
-                            if pattern in tokenized_cat:
-                                new_labels.append(category)
-                    docs_labels = docs_labels + new_labels
-                labels.append(list(set(docs_labels)))
+        # labeling by art movements
+        painter_idx = [idx for idx, label in enumerate(labels) if 'painter' in label]
 
-        for idx, doc in enumerate(docs):
-            # try:
-            _process_labeling((idx, doc))
-            # except AttributeError:
-            #     pass
-            # except Exception:
-            #     pass
+        for loop_idx, (cats, doc_idx) in enumerate(pool.imap(_label_painters, painter_idx)):
+            labels[doc_idx] = list(set(list(cats) + labels[doc_idx]))
+            print('[{}/{}]'.format(loop_idx, len(painter_idx)), end='\r')
 
-            print('labels\' len {0:} docs\' len {1:}'.format(len(labels), len(docs)), end='\r')
+        pool.close()
+
         pickle.dump(labels, open(os.path.join(PICKLE_PATH, 'wikipedia_labels'), 'wb'))
 
     elif config.citations_parse_dump:
@@ -228,6 +284,7 @@ def main(config):
         indexes = list()
         edges = list()
         labels = list()
+
         for idx, citation in enumerate(citations):
             tokens = re.split(r'(#\*|#@|#!|#t|#c|#index|#%)', citation)
             abstract = tokens[tokens.index('#!') + 1].strip()
@@ -260,10 +317,11 @@ def main(config):
 
         def checkup_images(doc_title):
             doc_idx = docs.index(doc_title)
-            existing_images = glob.glob(os.path.join(DATA_PATH, 'wiki2vec', 'images', str(doc_idx)+'_*'))
+            existing_images = glob.glob(os.path.join(DATA_PATH, 'wiki2vec', 'images', str(doc_idx) + '_*'))
             if len(existing_images) < 3:
                 if 'painter' in labels[doc_idx]:
-                    q = 'https://www.google.co.kr/search?q=' + doc_title.replace('#', '+') + '+Paintings' + '&source=lnms&tbm=isch'
+                    q = 'https://www.google.co.kr/search?q=' + doc_title.replace('#',
+                                                                                 '+') + '+Paintings' + '&source=lnms&tbm=isch'
                 else:
                     q = 'https://www.google.co.kr/search?q=' + doc_title.replace('#', '+') + '&source=lnms&tbm=isch'
 
