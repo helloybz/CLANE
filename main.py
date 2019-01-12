@@ -203,7 +203,6 @@ def main(config):
 
         v[node_id] = c_x + diff
 
-        # pdb.set_trace()
         return delta > config.threshold, delta
 
     pool = ThreadPool(1)
