@@ -8,6 +8,7 @@ from scipy.spatial.distance import euclidean
 from torch.nn.functional import cosine_similarity
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 
+from dataset import CoraDataset
 from models import SimilarityMethod2
 from settings import PICKLE_PATH
 
@@ -64,102 +65,6 @@ def get_content_vectors(dataset):
                                  'rb'))
             return c
 
-        #     # Image Modality Model
-        #     if config.img_embedder == 'resnet18':
-        #         img_embedder = Resnet18().to(device)
-        #     elif config.img_embedder == 'resnet152':
-        #         img_embedder = Resnet152().to(device)
-        #     else:
-        #         raise argparse.ArgumentError
-        #     img_embedder.eval()
-        #     print('set model to eval mode')
-        #
-        #     # Text Modality Model
-        #     if os.path.exists(os.path.join(PICKLE_PATH, 'wikipedia_doc2vec_embedder_{0}'.format(config.doc2vec_size))):
-        #         txt_embedder = pickle.load(
-        #             open(os.path.join(PICKLE_PATH, 'wikipedia_doc2vec_embedder_{0}'.format(config.doc2vec_size)), 'rb'))
-        #     else:
-        #         doc_paths = glob.glob(os.path.join(DATA_PATH, 'wiki2vec', 'full_text', '*'))
-        #         txts = [open(path, 'r', encoding='utf-8').read() for path in doc_paths]
-        #         txts = [preprocess_string(txt, TEXT_FILTERS) for txt in txts]
-        #         txt_embedder = Doc2Vec(txts, vector_size=config.doc2vec_size)
-        #         pickle.dump(txt_embedder, open(
-        #             os.path.join(PICKLE_PATH, 'wikipedia_doc2vec_embedder_{0}'.format(config.doc2vec_size)), 'wb'))
-        #     print('Text modal model prepared.')
-        #
-        #     docs = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_docs'), 'rb'))
-        #
-        #     pool = ThreadPool(5)
-        #
-        #     c = None
-        #
-        #     for idx, (doc_id, doc_title) in enumerate(pool.imap(lambda x: x, enumerate(docs))):
-        #         while True:
-        #             img_paths = glob.glob(os.path.join(DATA_PATH, 'wiki2vec', 'images', str(doc_id) + '_*'))
-        #             img_set = list()
-        #             for path in img_paths:
-        #                 try:
-        #                     img = load_image(path, transform=img_embedder.transform, shape=(224, 224)).to(device)
-        #                     img_set.append(img)
-        #                 except Exception:
-        #                     with open(os.path.join(BASE_DIR, 'bad_images'), 'a') as bad_img_io:
-        #                         bad_img_io.write(os.path.basename(path))
-        #
-        #             with open(os.path.join(DATA_PATH, 'wiki2vec', 'full_text', str(doc_id)), 'r',
-        #                       encoding='utf-8') as txt_io:
-        #                 text = txt_io.read()
-        #             try:
-        #                 img_feature = img_embedder(img_set)
-        #                 break
-        #             except FileNotFoundError:
-        #                 labels = pickle.load(open(os.path.join(PICKLE_PATH, 'wikipedia_labels'), 'rb'))
-        #                 checkup_images(doc_idx=doc_id, doc_title=doc_title, doc_labels=labels[doc_id])
-        #
-        #         text_feature = txt_embedder.forward(text)
-        #         merged_feature = np.hstack((F.normalize(torch.Tensor(text_feature)), F.normalize(img_feature)))
-        #
-        #         if c is not None:
-        #             c = np.vstack((c, merged_feature))
-        #         else:
-        #             c = merged_feature
-        #
-        #         print('Calculating C done {0:%}'.format(idx / len(docs)), end="\r")
-        #
-        #     pool.close()
-        #
-        #     pickle.dump(c, open(
-        #         os.path.join(PICKLE_PATH, 'wikipedia_c_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)),
-        #         'wb'))
-        # else:
-        #     c = pickle.load(
-        #         open(os.path.join(PICKLE_PATH,
-        #                           'wikipedia_c_{0}_{1}'.format(config.img_embedder, config.doc2vec_size)),
-        #              'rb'))
-        #
-        # return c
-
-
-def get_edges(dataset):
-    if config.dataset == 'painter':
-        if not os.path.exists(os.path.join(PICKLE_PATH,
-                                           config.dataset,
-                                           'edges_{}'.format(config.dataset)
-                                           )):
-
-            print('not exists')
-            raise FileExistsError
-        else:
-            c = pickle.load(open(os.path.join(PICKLE_PATH,
-                                              config.dataset,
-                                              'edges_{}'.format(
-                                                      config.dataset)),
-                                 'rb'))
-            return c
-    elif config.dataset == 'bio':
-        pass
-    else:
-        raise ValueError
-
 
 def method_1(c_x, edges, **kwargs):
     v_x = c_x.clone().to(kwargs['device'])
@@ -207,42 +112,40 @@ def method_1(c_x, edges, **kwargs):
     return v_x
 
 
-def method_2(c_x, edges, **kwargs):
-    sim_model = SimilarityMethod2(dim=c_x.shape[1]).to(kwargs['device'])
-
-    v_x = c_x.clone().to(kwargs['device'])
-
+def method_2(dataset, **kwargs):
+    sim_model = SimilarityMethod2(dim=dataset.c_x.shape[1]).to(kwargs['device'])
+    v_x = dataset.c_x.clone().to(kwargs['device'])
+    
     while True:
-
-        prev_V = v_x.clone()
-        #
-        # step 1
-        #
         step1_converged = False
         with torch.no_grad():
             while not step1_converged:
                 max_delta = -np.inf
                 step1_converged = True
-
-                # ([edge[0] if edge[0] != doc_idx else edge[1] for edge in edges if doc_idx in edge] for idx, v in enumerate(v_x))
-                # raise Exception
-                # sim_model(v_x, (for in enumerate()))
-                for doc_idx, v in enumerate(v_x):
-                    ref_idxs = [edge[0] if edge[0] != doc_idx else edge[1]
-                                for edge in edges if doc_idx in edge]
-
-                    if len(ref_idxs) != 0:
+                for v_idx, v in enumerate(v_x):
+                    ref_idxs = list(dataset.get_refs_of(v_idx))
+                        
+                    if ref_idxs:
                         ref_vs = v_x[ref_idxs]
-                        sims = sim_model(v_x[doc_idx].unsqueeze_(0), [ref_vs])
+                        sims = sim_model(v_x[v_idx].unsqueeze_(0), [ref_vs])
+
+                        messages = None
+                        for ref_idx, sim in zip(ref_idxs, sims[0]):
+                            print('sim', sim, sim.shape)
+                            print('current embedding', v_x[ref_idx], v_x[ref_idx].shape)
+                            message = sim * v_x[ref_idx]
+                            if not messages:
+                                messages = message 
+                            else:
+                                messages = messages + message
+
+                        messages = messages * config.alpha
 
                         try:
-                            diff = config.alpha * sum([sim * v_x[ref_idx]
-                                                       for ref_idx, sim
-                                                       in zip(ref_idxs, torch.squeeze(sims[0]))])
-                        except TypeError:
-                            continue
+                            current_embedding = v_x[v_idx]
+                            updated_embedding = c_x[v_dix] + messages
 
-                        try:
+                            print(updated_embedding - current_embedding)
                             delta = torch.sum(((v_x[doc_idx] - (
                                     c_x[doc_idx] + diff)) ** 2).cpu())
                         except ValueError:
@@ -306,21 +209,23 @@ def method_2(c_x, edges, **kwargs):
 
 
 def main(config):
+
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
     print('[DEVICE] {}'.format(device))
 
-    c_x = get_content_vectors(config.dataset)
-    c_x = torch.from_numpy(c_x).to(device)
+    if config.dataset == 'cora':
+        dataset = CoraDataset()
+    else:
+        raise ValueError
 
-    edges = get_edges(config.dataset)
-    #
-    if config.method == 1:
+
+    if config.method == 1: # Cosine similarity
         v = method_1(c_x, edges, device=device)
-    elif config.method == 2:
-        v = method_2(c_x, edges, device=device)
+    elif config.method == 2: # UNNAMED
+        method_2(dataset, device=device)
     else:
         pass
 

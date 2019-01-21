@@ -7,7 +7,6 @@ from gensim.parsing import strip_non_alphanum, strip_numeric, \
 from torch import nn
 from torchvision import models, transforms
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 TEXT_FILTERS = [lambda x: x.lower(), strip_non_alphanum, strip_numeric,
                 strip_multiple_whitespaces, strip_short]
