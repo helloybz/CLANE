@@ -105,17 +105,23 @@ class SimilarityMethod2(nn.Module):
         self.A = nn.Linear(in_features=dim,
                            out_features=dim,
                            bias=False)
-        self.softmax = nn.Softmax(dim=1)
+        self.softmax = nn.Softmax(dim=0)
 
-    def forward(self, vs, ref_vss):
-        A_vs = self.A(vs)
-        # print(ref_vss)
-        A_refss = [self.A(ref_vs) for ref_vs in ref_vss]
+    def forward(self, zs, ref_zss):
+        A_zs = self.A(zs)
+        A_refss = [self.A(ref_vs) for ref_vs in ref_zss]
 
-        return [self.softmax(torch.sigmoid(torch.mm(A_vs, torch.t(A_refs))))
-                for A_refs in A_refss]
+        a = torch.tensor(
+                [torch.sigmoid(torch.mm(A_zs.unsqueeze(0),
+                                        torch.t(A_refs.unsqueeze(0))))
+                 for A_refs in A_refss])
+        return self.softmax(a)
 
     def _prob_edge(self, v1, v2):
         v1 = v1.unsqueeze(-1)
         v2 = v2.unsqueeze(-1)
         return torch.sigmoid(torch.mm(torch.mm(torch.t(v1), self.W), v2))
+
+    def get_W(self):
+        A = next(self.A.parameters())
+        return torch.matmul(torch.transpose(A, 0, 1), A)

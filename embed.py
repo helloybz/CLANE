@@ -44,28 +44,6 @@ def v_collate_fn(data):
     return vs, ref, unref
 
 
-def get_content_vectors(dataset):
-    if dataset == 'painter':
-        # Load or Calculate C_X
-        if not os.path.exists(os.path.join(PICKLE_PATH,
-                                           config.dataset,
-                                           'c_{}_{}'.format(
-                                                   config.img_embedder,
-                                                   config.doc2vec_size)
-                                           )):
-
-            print('not exists')
-            raise FileExistsError
-        else:
-            c = pickle.load(open(os.path.join(PICKLE_PATH,
-                                              config.dataset,
-                                              'c_{}_{}'.format(
-                                                      config.img_embedder,
-                                                      config.doc2vec_size)),
-                                 'rb'))
-            return c
-
-
 def method_1(c_x, edges, **kwargs):
     v_x = c_x.clone().to(kwargs['device'])
     is_converged = False
@@ -113,9 +91,11 @@ def method_1(c_x, edges, **kwargs):
 
 
 def method_2(dataset, **kwargs):
-    sim_model = SimilarityMethod2(dim=dataset.c_x.shape[1]).to(kwargs['device'])
-    v_x = dataset.c_x.clone().to(kwargs['device'])
-    
+
+    similarity_model = SimilarityMethod2(dim=dataset.X.shape[1]).to(kwargs['device'])
+
+    Z = dataset.X.clone().to(kwargs['device'])
+
     while True:
         step1_converged = False
         with torch.no_grad():
@@ -129,47 +109,58 @@ def method_2(dataset, **kwargs):
                         ref_vs = v_x[ref_idxs]
                         sims = sim_model(v_x[v_idx].unsqueeze_(0), [ref_vs])
 
-                        messages = None
-                        for ref_idx, sim in zip(ref_idxs, sims[0]):
-                            print('sim', sim, sim.shape)
-                            print('current embedding', v_x[ref_idx], v_x[ref_idx].shape)
-                            message = sim * v_x[ref_idx]
-                            if not messages:
-                                messages = message 
-                            else:
-                                messages = messages + message
+                for doc_id, z in enumerate(Z):
+                    ref_ids = dataset.get_ref_ids(doc_id, directed=False)
 
-                        messages = messages * config.alpha
+                    # aggregate
+                    ref_ids = [ref_idx for ref_idx, flag in enumerate(ref_ids) if flag == 1]
 
-                        try:
-                            current_embedding = v_x[v_idx]
-                            updated_embedding = c_x[v_dix] + messages
+                    W = similarity_model.get_W()
 
-                            print(updated_embedding - current_embedding)
-                            delta = torch.sum(((v_x[doc_idx] - (
-                                    c_x[doc_idx] + diff)) ** 2).cpu())
-                        except ValueError:
-                            raise
+                    # print(W.shape)
+                    similarities = similarity_model(z, Z[ref_ids])
 
-                        # update max_delta
-                        max_delta = max(max_delta, delta)
+                    message = config.alpha * sum([z * sim for z, sim in zip(Z[ref_ids], similarities)])
+                    print(message)
 
-                        # update v_x
-                        v_x[doc_idx] = c_x[doc_idx] + diff
-
-                        print(
-                                '[EMBED] method_2 - step1 // Maximum_error: {}, ({}/{})'.format(
-                                        np.round(max_delta, 4),
-                                        doc_idx,
-                                        c_x.shape[0]), end='\r')
+                    # print(Z[ref_ids].shape)
+                    # if sum(ref_ids) != 0:
+                    #     ref_zs = Z[list(ref_ids)]
+                    #
+                    #     sims = sim_model(Z[doc_idx].unsqueeze_(0), [ref_zs])
+                    #
+                    #     try:
+                    #         diff = config.alpha * sum([sim * Z[ref_idx]
+                    #                                    for ref_idx, sim
+                    #                                    in zip(ref_idxs, torch.squeeze(sims[0]))])
+                    #     except TypeError:
+                    #         continue
+                    #
+                    #     try:
+                    #         delta = torch.sum(((v_x[doc_idx] - (
+                    #                 c_x[doc_idx] + diff)) ** 2).cpu())
+                    #     except ValueError:
+                    #         raise
+                    #
+                    #     # update max_delta
+                    #     max_delta = max(max_delta, delta)
+                    #
+                    #     # update v_x
+                    #     v_x[doc_idx] = c_x[doc_idx] + diff
+                    #
+                    #     print(
+                    #             '[EMBED] method_2 - step1 // Maximum_error: {}, ({}/{})'.format(
+                    #                     np.round(max_delta, 4),
+                    #                     doc_idx,
+                    #                     c_x.shape[0]), end='\r')
 
                 if max_delta > config.threshold_delta:
                     step1_converged = False
 
             print('step1 done')
         # check if v is updated
-        if torch.all(torch.eq(prev_V, v_x)) == 1:
-            break
+        # if torch.all(torch.eq(prev_V, v_x)) == 1:
+        #     break
 
         #
         # step 2, "Update W"
@@ -221,23 +212,23 @@ def main(config):
     else:
         raise ValueError
 
-
-    if config.method == 1: # Cosine similarity
-        v = method_1(c_x, edges, device=device)
-    elif config.method == 2: # UNNAMED
+    if config.method == 1:
+        # v = method_1(c_x, edges, device=device)
+        pass
+    elif config.method == 2:
         method_2(dataset, device=device)
     else:
         pass
-
-    pickle.dump(v, open(
-            os.path.join(PICKLE_PATH, config.dataset, 'v_{}_{}'.format(
-                    config.img_embedder,
-                    config.doc2vec_size,
-                    config.method,
-                    config.alpha,
-                    config.threshold_delta
-            )), 'wb'))
-    # print(len(edges))
+    #
+    # pickle.dump(v, open(
+    #         os.path.join(PICKLE_PATH, config.dataset, 'v_{}_{}'.format(
+    #                 config.img_embedder,
+    #                 config.doc2vec_size,
+    #                 config.method,
+    #                 config.alpha,
+    #                 config.threshold_delta
+    #         )), 'wb'))
+    # # print(len(edges))
 
 
 if __name__ == '__main__':
