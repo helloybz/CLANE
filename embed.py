@@ -8,6 +8,7 @@ from scipy.spatial.distance import euclidean
 from torch.nn.functional import cosine_similarity
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 
+from dataset import CoraDataset
 from models import SimilarityMethod2
 from settings import PICKLE_PATH
 
@@ -41,51 +42,6 @@ def v_collate_fn(data):
     vs = torch.stack(v)
 
     return vs, ref, unref
-
-
-def get_content_vectors(dataset):
-    if dataset == 'painter':
-        # Load or Calculate C_X
-        if not os.path.exists(os.path.join(PICKLE_PATH,
-                                           config.dataset,
-                                           'c_{}_{}'.format(
-                                                   config.img_embedder,
-                                                   config.doc2vec_size)
-                                           )):
-
-            print('not exists')
-            raise FileExistsError
-        else:
-            c = pickle.load(open(os.path.join(PICKLE_PATH,
-                                              config.dataset,
-                                              'c_{}_{}'.format(
-                                                      config.img_embedder,
-                                                      config.doc2vec_size)),
-                                 'rb'))
-            return c
-        
-
-
-def get_edges(dataset):
-    if config.dataset == 'painter':
-        if not os.path.exists(os.path.join(PICKLE_PATH,
-                                           config.dataset,
-                                           'edges_{}'.format(config.dataset)
-                                           )):
-
-            print('not exists')
-            raise FileExistsError
-        else:
-            c = pickle.load(open(os.path.join(PICKLE_PATH,
-                                              config.dataset,
-                                              'edges_{}'.format(
-                                                      config.dataset)),
-                                 'rb'))
-            return c
-    elif config.dataset == 'bio':
-        pass
-    else:
-        raise ValueError
 
 
 def method_1(c_x, edges, **kwargs):
@@ -134,66 +90,71 @@ def method_1(c_x, edges, **kwargs):
     return v_x
 
 
-def method_2(c_x, edges, **kwargs):
-    sim_model = SimilarityMethod2(dim=c_x.shape[1]).to(kwargs['device'])
+def method_2(dataset, **kwargs):
 
-    v_x = c_x.clone().to(kwargs['device'])
+    similarity_model = SimilarityMethod2(dim=dataset.X.shape[1]).to(kwargs['device'])
+
+    Z = dataset.X.clone().to(kwargs['device'])
 
     while True:
-
-        prev_V = v_x.clone()
-        #
-        # step 1
-        #
         step1_converged = False
         with torch.no_grad():
             while not step1_converged:
                 max_delta = -np.inf
                 step1_converged = True
 
-                # ([edge[0] if edge[0] != doc_idx else edge[1] for edge in edges if doc_idx in edge] for idx, v in enumerate(v_x))
-                # raise Exception
-                # sim_model(v_x, (for in enumerate()))
-                for doc_idx, v in enumerate(v_x):
-                    ref_idxs = [edge[0] if edge[0] != doc_idx else edge[1]
-                                for edge in edges if doc_idx in edge]
+                for doc_id, z in enumerate(Z):
+                    ref_ids = dataset.get_ref_ids(doc_id, directed=False)
 
-                    if len(ref_idxs) != 0:
-                        ref_vs = v_x[ref_idxs]
-                        sims = sim_model(v_x[doc_idx].unsqueeze_(0), [ref_vs])
+                    # aggregate
+                    ref_ids = [ref_idx for ref_idx, flag in enumerate(ref_ids) if flag == 1]
 
-                        try:
-                            diff = config.alpha * sum([sim * v_x[ref_idx]
-                                                       for ref_idx, sim
-                                                       in zip(ref_idxs, torch.squeeze(sims[0]))])
-                        except TypeError:
-                            continue
+                    W = similarity_model.get_W()
 
-                        try:
-                            delta = torch.sum(((v_x[doc_idx] - (
-                                    c_x[doc_idx] + diff)) ** 2).cpu())
-                        except ValueError:
-                            raise
+                    # print(W.shape)
+                    similarities = similarity_model(z, Z[ref_ids])
 
-                        # update max_delta
-                        max_delta = max(max_delta, delta)
+                    message = config.alpha * sum([z * sim for z, sim in zip(Z[ref_ids], similarities)])
+                    print(message)
 
-                        # update v_x
-                        v_x[doc_idx] = c_x[doc_idx] + diff
-
-                        print(
-                                '[EMBED] method_2 - step1 // Maximum_error: {}, ({}/{})'.format(
-                                        np.round(max_delta, 4),
-                                        doc_idx,
-                                        c_x.shape[0]), end='\r')
+                    # print(Z[ref_ids].shape)
+                    # if sum(ref_ids) != 0:
+                    #     ref_zs = Z[list(ref_ids)]
+                    #
+                    #     sims = sim_model(Z[doc_idx].unsqueeze_(0), [ref_zs])
+                    #
+                    #     try:
+                    #         diff = config.alpha * sum([sim * Z[ref_idx]
+                    #                                    for ref_idx, sim
+                    #                                    in zip(ref_idxs, torch.squeeze(sims[0]))])
+                    #     except TypeError:
+                    #         continue
+                    #
+                    #     try:
+                    #         delta = torch.sum(((v_x[doc_idx] - (
+                    #                 c_x[doc_idx] + diff)) ** 2).cpu())
+                    #     except ValueError:
+                    #         raise
+                    #
+                    #     # update max_delta
+                    #     max_delta = max(max_delta, delta)
+                    #
+                    #     # update v_x
+                    #     v_x[doc_idx] = c_x[doc_idx] + diff
+                    #
+                    #     print(
+                    #             '[EMBED] method_2 - step1 // Maximum_error: {}, ({}/{})'.format(
+                    #                     np.round(max_delta, 4),
+                    #                     doc_idx,
+                    #                     c_x.shape[0]), end='\r')
 
                 if max_delta > config.threshold_delta:
                     step1_converged = False
 
             print('step1 done')
         # check if v is updated
-        if torch.all(torch.eq(prev_V, v_x)) == 1:
-            break
+        # if torch.all(torch.eq(prev_V, v_x)) == 1:
+        #     break
 
         #
         # step 2, "Update W"
@@ -239,27 +200,28 @@ def main(config):
         device = torch.device('cpu')
     print('[DEVICE] {}'.format(device))
 
-    c_x = get_content_vectors(config.dataset)
-    c_x = torch.from_numpy(c_x).to(device)
+    if config.dataset == 'cora':
+        dataset = CoraDataset()
+    else:
+        raise ValueError
 
-    edges = get_edges(config.dataset)
-    #
     if config.method == 1:
-        v = method_1(c_x, edges, device=device)
+        # v = method_1(c_x, edges, device=device)
+        pass
     elif config.method == 2:
-        v = method_2(c_x, edges, device=device)
+        method_2(dataset, device=device)
     else:
         pass
-
-    pickle.dump(v, open(
-            os.path.join(PICKLE_PATH, config.dataset, 'v_{}_{}'.format(
-                    config.img_embedder,
-                    config.doc2vec_size,
-                    config.method,
-                    config.alpha,
-                    config.threshold_delta
-            )), 'wb'))
-    # print(len(edges))
+    #
+    # pickle.dump(v, open(
+    #         os.path.join(PICKLE_PATH, config.dataset, 'v_{}_{}'.format(
+    #                 config.img_embedder,
+    #                 config.doc2vec_size,
+    #                 config.method,
+    #                 config.alpha,
+    #                 config.threshold_delta
+    #         )), 'wb'))
+    # # print(len(edges))
 
 
 if __name__ == '__main__':

@@ -10,33 +10,55 @@ class CoraDataset(Dataset):
     def __init__(self):
         self.paper_ids = list()
         self.labels = list()
-        self.c_x = None
-        self.edges = list()
-        with open(os.path.join(DATA_PATH, 'cora', 'cora.content'), 'r') as cora_content_io:
+        self.X = None
+        self.A = None
+
+        with open(os.path.join(DATA_PATH, 'cora', 'cora.content'),
+                  'r') as cora_content_io:
             while True:
                 sample = cora_content_io.readline()
-                if not sample: break
+
+                if not sample:
+                    break
+
                 paper_id, *content, label = sample.split('\t')
-                self.paper_ids.append(paper_id)
+                self.paper_ids.append(int(paper_id))
                 self.labels.append(label)
                 content = torch.Tensor([[int(value) for value in content]])
-                if self.c_x is not None:
-                    self.c_x = torch.cat([self.c_x, content], 0)
+
+                if self.X is not None:
+                    self.X = torch.cat([self.X, content], 0)
                 else:
-                    self.c_x = content
-        
-        with open(os.path.join(DATA_PATH, 'cora', 'cora.cites'), 'r') as cora_edge_io:
+                    self.X = content
+
+        self.A = torch.zeros(len(self.paper_ids), len(self.paper_ids))
+
+        with open(os.path.join(DATA_PATH, 'cora', 'cora.cites'),
+                  'r') as cora_edge_io:
             while True:
                 sample = cora_edge_io.readline()
-                if not sample: break
+                if not sample:
+                    break
+
                 cited, citing = sample.split('\t')
-                self.edges.append((int(cited.strip()), int(citing.strip())))
+                cited = self.paper_ids.index(int(cited))
+                citing = self.paper_ids.index(int(citing))
+                self.A[cited, citing] = 1
 
     def __getitem__(self, index):
-        return self.c_x[index],  self.paper_ids[index]
+        return self.X[index], self.paper_ids[index]
 
     def __len__(self):
         return len(self.paper_ids)
+
+    def get_ref_ids(self, doc_idx, directed=False):
+        outgoing_refs = self.A[:, doc_idx]
+        ingoing_refs = self.A[doc_idx, :]
+
+        if directed:
+            return ingoing_refs, outgoing_refs
+        else:
+            return outgoing_refs + ingoing_refs
 
 
 class CoraDataLoader(DataLoader):
