@@ -9,6 +9,7 @@ from torch.nn.functional import cosine_similarity
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from dataset import CoraDataset
+from dataset import cora_collate
 from models import SimilarityMethod2
 from settings import PICKLE_PATH
 
@@ -38,7 +39,7 @@ class VDataSet(Dataset):
 
 
 def v_collate_fn(data):
-    v, ref, unref = zip(*data)
+    z, ref, unref = zip(*data)
     vs = torch.stack(v)
 
     return vs, ref, unref
@@ -91,116 +92,126 @@ def method_1(c_x, edges, **kwargs):
 
 
 def method_2(dataset, **kwargs):
-
-    similarity_model = SimilarityMethod2(dim=dataset.X.shape[1]).to(kwargs['device'])
+    similarity_model = SimilarityMethod2(dim=dataset.X.shape[1]).to(
+            kwargs['device'])
 
     Z = dataset.X.clone().to(kwargs['device'])
 
     while True:
-        step1_converged = False
-        with torch.no_grad():
-            while not step1_converged:
-                max_delta = -np.inf
-                step1_converged = True
-                for v_idx, v in enumerate(v_x):
-                    ref_idxs = list(dataset.get_refs_of(v_idx))
-                        
-                    if ref_idxs:
-                        ref_vs = v_x[ref_idxs]
-                        sims = sim_model(v_x[v_idx].unsqueeze_(0), [ref_vs])
-
-                for doc_id, z in enumerate(Z):
-                    ref_ids = dataset.get_ref_ids(doc_id, directed=False)
-
-                    # aggregate
-                    ref_ids = [ref_idx for ref_idx, flag in enumerate(ref_ids) if flag == 1]
-
-                    W = similarity_model.get_W()
-
-                    # print(W.shape)
-                    similarities = similarity_model(z, Z[ref_ids])
-
-                    message = config.alpha * sum([z * sim for z, sim in zip(Z[ref_ids], similarities)])
-                    print(message)
-
-                    # print(Z[ref_ids].shape)
-                    # if sum(ref_ids) != 0:
-                    #     ref_zs = Z[list(ref_ids)]
-                    #
-                    #     sims = sim_model(Z[doc_idx].unsqueeze_(0), [ref_zs])
-                    #
-                    #     try:
-                    #         diff = config.alpha * sum([sim * Z[ref_idx]
-                    #                                    for ref_idx, sim
-                    #                                    in zip(ref_idxs, torch.squeeze(sims[0]))])
-                    #     except TypeError:
-                    #         continue
-                    #
-                    #     try:
-                    #         delta = torch.sum(((v_x[doc_idx] - (
-                    #                 c_x[doc_idx] + diff)) ** 2).cpu())
-                    #     except ValueError:
-                    #         raise
-                    #
-                    #     # update max_delta
-                    #     max_delta = max(max_delta, delta)
-                    #
-                    #     # update v_x
-                    #     v_x[doc_idx] = c_x[doc_idx] + diff
-                    #
-                    #     print(
-                    #             '[EMBED] method_2 - step1 // Maximum_error: {}, ({}/{})'.format(
-                    #                     np.round(max_delta, 4),
-                    #                     doc_idx,
-                    #                     c_x.shape[0]), end='\r')
-
-                if max_delta > config.threshold_delta:
-                    step1_converged = False
-
-            print('step1 done')
-        # check if v is updated
-        # if torch.all(torch.eq(prev_V, v_x)) == 1:
+        # step1_converged = False
+        # previous_Z = Z.clone()
+        # with torch.no_grad():
+        #     step1_counter = 0
+        #     while not step1_converged:
+        #         max_distance = -np.inf
+        #         step1_converged = True
+        #
+        #         for doc_id, z in enumerate(Z):
+        #             ref_ids = dataset.get_ref_ids(doc_id, directed=False)
+        #
+        #             # aggregate
+        #             ref_ids = [ref_idx
+        #                        for ref_idx, flag
+        #                        in enumerate(ref_ids)
+        #                        if flag == 1]
+        #
+        #             similarities = similarity_model(z, Z[ref_ids])
+        #
+        #             message = config.alpha * sum([z * sim
+        #                                           for z, sim
+        #                                           in zip(Z[ref_ids],
+        #                                                  similarities)])
+        #             # print(message)
+        #
+        #             # Check convergence
+        #             try:
+        #                 distance = Z[doc_id].to(kwargs['device']) \
+        #                            - dataset.X[doc_id].to(kwargs['device']) \
+        #                            - message.to(kwargs['device'])
+        #             except AttributeError:
+        #                 if not ref_ids:
+        #                     distance = Z[doc_id].to(kwargs['device']) \
+        #                                - dataset.X[doc_id].to(kwargs['device'])
+        #                 else:
+        #                     raise
+        #
+        #             distance = sum(distance ** 2)
+        #             # print("distance: ", distance)
+        #             max_distance = max(max_distance, distance)
+        #             # print("max distance:", max_distance)
+        #
+        #             # Update z
+        #             Z[doc_id] = dataset.X[doc_id].to(kwargs['device']) + message
+        #
+        #             print('Method2 / UpdateZ / {0} / maximum_loss {1} / {2}/{3}'.format(step1_counter, max_distance, doc_id, Z.shape[0]), end='\r')
+        #
+        #         step1_counter += 1
+        #
+        #         if max_distance > config.threshold_distance:
+        #             step1_converged = False
+        #     dataset.Z = Z
+        #     print('step1 done')
+        #
+        # # check if Z is updated
+        # if torch.all(torch.eq(previous_Z, Z)) == 1:
+        #     print('Z is not updated.')
         #     break
 
-        #
+        dataset.Z = dataset.X.clone()
+
         # step 2, "Update W"
-        #
-        def loss_W(_vs, _refs, _unrefs):
-            # _prob_edge 만들어서 고치기
-            _loss = sum([torch.sum(torch.log(sample)) for sample in
-                         sim_model(_vs, _refs)]) + \
-                    sum([torch.sum(torch.log(1 - sample)) for sample in
-                         sim_model(_vs, _unrefs)])
+        def loss_W(_zs, _refs_batch, _unrefs_batch):
+            batch_loss = None
+            for idx, _z in enumerate(_zs):
+                if len(_refs_batch[idx]) != 0:
+                    ref_probs_edge = [torch.log(similarity_model.prob_edge(_z, _ref))
+                                      for _ref
+                                      in _refs_batch[idx]]
+                    ref_loss = torch.sum(torch.stack(ref_probs_edge), dim=0)
+                else:
+                    ref_loss = 0
+
+                if len(_unrefs_batch[idx]) != 0:
+                    unref_probs_edge = [torch.log(1 - similarity_model.prob_edge(_z, _unref))
+                                        for _unref
+                                        in _unrefs_batch[idx]]
+                    unref_loss = torch.sum(torch.stack(unref_probs_edge), dim=0)
+                else:
+                    unref_loss = 0
+
+                # print(ref_loss.shape, unref_loss.shape)
+                if batch_loss is not None:
+                    batch_loss += (ref_loss + unref_loss)
+                else:
+                    batch_loss = (ref_loss + unref_loss)
+
+            _loss = -(batch_loss / config.batch_size)
             return _loss
 
-        sim_model.train()
+        similarity_model.train()
 
-        optimizer = torch.optim.Adam(params=sim_model.parameters())
+        optimizer = torch.optim.Adam(params=similarity_model.parameters())
         optimizer.zero_grad()
 
-        v_dataset = VDataSet(v_x, edges)
-
         for epoch in range(config.epoch):
-            v_loader = DataLoader(v_dataset,
-                                  batch_size=config.batch_size,
-                                  shuffle=True,
-                                  collate_fn=v_collate_fn,
-                                  )
+            dataloader = DataLoader(dataset,
+                                    batch_size=config.batch_size,
+                                    shuffle=True,
+                                    collate_fn=cora_collate,
+                                    )
 
-            for batch_idx, (vs, refs, unrefs) in enumerate(v_loader):
-                loss = loss_W(vs, refs, unrefs)
+            for batch_idx, (zs, ref, unref) in enumerate(dataloader):
+                loss = loss_W(zs, ref, unref)
                 loss.backward()
                 optimizer.step()
 
-                print('[EMBED] method_2 - step2// loss: {} epoch: {} batch: {}'.format(
-                        loss, epoch, batch_idx),
-                        end='\r')
+                print('Method2 / UpdateA / epoch: {} / batch: {} / loss: {}'.format(
+                        epoch, batch_idx, loss.data[0]), end='\r')
 
-    return v_x
+    return Z
 
 
 def main(config):
-
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -211,24 +222,26 @@ def main(config):
         dataset = CoraDataset()
     else:
         raise ValueError
+    print('DATASET LOADED.')
 
     if config.method == 1:
         # v = method_1(c_x, edges, device=device)
         pass
     elif config.method == 2:
-        method_2(dataset, device=device)
+        Z = method_2(dataset, device=device)
     else:
         pass
-    #
-    # pickle.dump(v, open(
-    #         os.path.join(PICKLE_PATH, config.dataset, 'v_{}_{}'.format(
-    #                 config.img_embedder,
-    #                 config.doc2vec_size,
-    #                 config.method,
-    #                 config.alpha,
-    #                 config.threshold_delta
-    #         )), 'wb'))
-    # # print(len(edges))
+
+    pickle.dump(Z, open(
+            os.path.join(PICKLE_PATH, config.dataset, 'v_{}_{}'.format(
+                    config.dataset,
+                    config.method,
+                    config.epoch,
+                    config.batch_size,
+                    config.alpha,
+                    config.threshold_distance,
+            )), 'wb'))
+    # print(len(edges))
 
 
 if __name__ == '__main__':
@@ -238,7 +251,7 @@ if __name__ == '__main__':
     parser.add_argument('--doc2vec_size', type=str, default='1024')
     parser.add_argument('--method', type=int, default=1)
     parser.add_argument('--alpha', type=float, default=0.9)
-    parser.add_argument('--threshold_delta', type=float, default=0.001)
+    parser.add_argument('--threshold_distance', type=float, default=0.001)
     parser.add_argument('--epoch', type=int, default=3)
     parser.add_argument('--batch_size', type=int, default=100)
 

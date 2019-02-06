@@ -101,7 +101,6 @@ class Doc2Vec(nn.Module):
 class SimilarityMethod2(nn.Module):
     def __init__(self, dim):
         super(SimilarityMethod2, self).__init__()
-        # self.W = nn.Parameter(torch.randn(dim, dim), requires_grad=True)
         self.A = nn.Linear(in_features=dim,
                            out_features=dim,
                            bias=False)
@@ -117,10 +116,12 @@ class SimilarityMethod2(nn.Module):
                  for A_refs in A_refss])
         return self.softmax(a)
 
-    def _prob_edge(self, v1, v2):
-        v1 = v1.unsqueeze(-1)
-        v2 = v2.unsqueeze(-1)
-        return torch.sigmoid(torch.mm(torch.mm(torch.t(v1), self.W), v2))
+    def prob_edge(self, z1, z2):
+        z1 = z1.unsqueeze(-1)
+        z2 = z2.unsqueeze(-1)
+        az1 = self.A.cpu()(torch.t(z1))
+        az2 = self.A.cpu()(torch.t(z2))
+        return torch.sigmoid(torch.mm(az1, torch.t(az2)))
 
     def get_W(self):
         A = next(self.A.parameters())
