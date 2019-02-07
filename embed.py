@@ -1,48 +1,17 @@
 import argparse
 import os
 import pickle
-import torch
 
 import numpy as np
+import torch
 from scipy.spatial.distance import euclidean
 from torch.nn.functional import cosine_similarity
-from torch.utils.data import DataLoader, Dataset, TensorDataset
+from torch.utils.data import DataLoader, Dataset
 
 from dataset import CoraDataset
 from dataset import cora_collate
 from models import SimilarityMethod2
 from settings import PICKLE_PATH
-
-
-class VDataSet(Dataset):
-
-    def __init__(self, v_tensor, edges):
-        # super(VDataSet, self).__init__(self)
-        self.v = v_tensor
-        self.edges = edges
-
-    def __getitem__(self, index):
-        refs, unrefs = self._get_refs_and_unrefs(index)
-        return self.v[index], refs, unrefs
-
-    def _get_refs_and_unrefs(self, doc_idx):
-        ref_idxs = [edge[0] if edge[0] != doc_idx else edge[1]
-                    for edge in self.edges if doc_idx in edge]
-
-        unref_idxs = np.random.choice(
-                [idx for idx in range(self.v.shape[0]) if idx not in ref_idxs],
-                len(ref_idxs), replace=False)
-        return self.v[ref_idxs], self.v[unref_idxs]
-
-    def __len__(self):
-        return self.v.size(0)
-
-
-def v_collate_fn(data):
-    z, ref, unref = zip(*data)
-    vs = torch.stack(v)
-
-    return vs, ref, unref
 
 
 def method_1(c_x, edges, **kwargs):
@@ -92,70 +61,49 @@ def method_1(c_x, edges, **kwargs):
 
 
 def method_2(dataset, **kwargs):
-    similarity_model = SimilarityMethod2(dim=dataset.X.shape[1]).to(
-            kwargs['device'])
+    similarity_model = SimilarityMethod2(dim=dataset.X.shape[1])
+    similarity_model = similarity_model.cuda(kwargs['device'])
 
-    Z = dataset.X.clone().to(kwargs['device'])
+    dataset.Z = dataset.X.clone()
 
     while True:
-        # step1_converged = False
-        # previous_Z = Z.clone()
-        # with torch.no_grad():
-        #     step1_counter = 0
-        #     while not step1_converged:
-        #         max_distance = -np.inf
-        #         step1_converged = True
-        #
-        #         for doc_id, z in enumerate(Z):
-        #             ref_ids = dataset.get_ref_ids(doc_id, directed=False)
-        #
-        #             # aggregate
-        #             ref_ids = [ref_idx
-        #                        for ref_idx, flag
-        #                        in enumerate(ref_ids)
-        #                        if flag == 1]
-        #
-        #             similarities = similarity_model(z, Z[ref_ids])
-        #
-        #             message = config.alpha * sum([z * sim
-        #                                           for z, sim
-        #                                           in zip(Z[ref_ids],
-        #                                                  similarities)])
-        #             # print(message)
-        #
-        #             # Check convergence
-        #             try:
-        #                 distance = Z[doc_id].to(kwargs['device']) \
-        #                            - dataset.X[doc_id].to(kwargs['device']) \
-        #                            - message.to(kwargs['device'])
-        #             except AttributeError:
-        #                 if not ref_ids:
-        #                     distance = Z[doc_id].to(kwargs['device']) \
-        #                                - dataset.X[doc_id].to(kwargs['device'])
-        #                 else:
-        #                     raise
-        #
-        #             distance = sum(distance ** 2)
-        #             # print("distance: ", distance)
-        #             max_distance = max(max_distance, distance)
-        #             # print("max distance:", max_distance)
-        #
-        #             # Update z
-        #             Z[doc_id] = dataset.X[doc_id].to(kwargs['device']) + message
-        #
-        #             print('Method2 / UpdateZ / {0} / maximum_loss {1} / {2}/{3}'.format(step1_counter, max_distance, doc_id, Z.shape[0]), end='\r')
-        #
-        #         step1_counter += 1
-        #
-        #         if max_distance > config.threshold_distance:
-        #             step1_converged = False
-        #     dataset.Z = Z
-        #     print('step1 done')
-        #
-        # # check if Z is updated
-        # if torch.all(torch.eq(previous_Z, Z)) == 1:
-        #     print('Z is not updated.')
-        #     break
+        step1_converged = False
+        previous_Z = dataset.Z.clone()
+
+        with torch.no_grad():
+            step1_counter = 1
+            while not step1_converged:
+                max_distance = -np.inf
+                step1_converged = True
+
+                for doc_id, _ in enumerate(dataset.Z):
+                    Z_ref = dataset.Z[(dataset.A[doc_id, :] + dataset.A[:, doc_id]).byte()]
+                    similarities = similarity_model(dataset.Z[doc_id], Z_ref)
+                    message = config.gamma * torch.mv(torch.t(Z_ref), similarities)
+
+                    updated_z = dataset.X[doc_id] + message
+
+                    distance = dataset.Z[doc_id] - updated_z
+                    distance = torch.sum(distance ** 2)
+
+                    max_distance = max(max_distance, distance)
+
+                    dataset.Z[doc_id] = updated_z
+
+                    print(
+                        'Method2 / UpdateZ / {0} / maximum_loss {1} / {2}/{3}'.format(
+                            step1_counter, max_distance, doc_id, dataset.Z.shape[0]),
+                        end='\r')
+
+                if max_distance > config.threshold_distance:
+                    step1_converged = False
+                step1_counter += 1
+            print('step1 done')
+
+        # check if Z is updated
+        if torch.all(torch.eq(previous_Z, Z)) == 1:
+            print('Z is not updated.')
+            break
 
         dataset.Z = dataset.X.clone()
 
@@ -199,7 +147,7 @@ def method_2(dataset, **kwargs):
                                     shuffle=True,
                                     collate_fn=cora_collate,
                                     )
-
+            optimizer.zero_grad()
             for batch_idx, (zs, ref, unref) in enumerate(dataloader):
                 loss = loss_W(zs, ref, unref)
                 loss.backward()
@@ -219,7 +167,7 @@ def main(config):
     print('[DEVICE] {}'.format(device))
 
     if config.dataset == 'cora':
-        dataset = CoraDataset()
+        dataset = CoraDataset(device=device)
     else:
         raise ValueError
     print('DATASET LOADED.')
@@ -233,12 +181,17 @@ def main(config):
         pass
 
     pickle.dump(Z, open(
-            os.path.join(PICKLE_PATH, config.dataset, 'v_{}_{}'.format(
+            os.path.join(PICKLE_PATH, config.dataset, 'v_{}'.format(
+                    config.dataset,
+            )), 'wb'))
+
+    pickle.dump(Z, open(
+            os.path.join(PICKLE_PATH, config.dataset, 'v_{}_{}_{}_{}_{}_{}'.format(
                     config.dataset,
                     config.method,
                     config.epoch,
                     config.batch_size,
-                    config.alpha,
+                    config.gamma,
                     config.threshold_distance,
             )), 'wb'))
     # print(len(edges))
@@ -247,10 +200,9 @@ def main(config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str)
-    parser.add_argument('--img_embedder', type=str, default='resnet152')
-    parser.add_argument('--doc2vec_size', type=str, default='1024')
+    parser.add_argument('--directed', type=bool, default=False)
     parser.add_argument('--method', type=int, default=1)
-    parser.add_argument('--alpha', type=float, default=0.9)
+    parser.add_argument('--gamma', type=float, default=0.9)
     parser.add_argument('--threshold_distance', type=float, default=0.001)
     parser.add_argument('--epoch', type=int, default=3)
     parser.add_argument('--batch_size', type=int, default=100)

@@ -101,27 +101,28 @@ class Doc2Vec(nn.Module):
 class SimilarityMethod2(nn.Module):
     def __init__(self, dim):
         super(SimilarityMethod2, self).__init__()
+
         self.A = nn.Linear(in_features=dim,
                            out_features=dim,
                            bias=False)
         self.softmax = nn.Softmax(dim=0)
 
-    def forward(self, zs, ref_zss):
-        A_zs = self.A(zs)
-        A_refss = [self.A(ref_vs) for ref_vs in ref_zss]
-
-        a = torch.tensor(
-                [torch.sigmoid(torch.mm(A_zs.unsqueeze(0),
-                                        torch.t(A_refs.unsqueeze(0))))
-                 for A_refs in A_refss])
-        return self.softmax(a)
+    def forward(self, z, z_ref):
+        Az = self.A(z)
+        A_z_ref = self.A(z_ref)
+        return self.softmax(torch.sigmoid(torch.mv(self.A(A_z_ref), Az)))
+        # print(torch.tensor([self.prob_edge(Az, z_ref) for z_ref in A_z_ref],
+        #                    device=torch.device('cuda')))
+        # a = torch.tensor(
+        #         [torch.sigmoid(torch.mm(A_zs.unsqueeze(0),
+        #                                 torch.t(A_refs.unsqueeze(0))))
+        #          for A_refs in A_refss])
+        # return self.softmax(a)
 
     def prob_edge(self, z1, z2):
-        z1 = z1.unsqueeze(-1)
-        z2 = z2.unsqueeze(-1)
-        az1 = self.A.cpu()(torch.t(z1))
-        az2 = self.A.cpu()(torch.t(z2))
-        return torch.sigmoid(torch.mm(az1, torch.t(az2)))
+        az1 = self.A(z1)
+        az2 = self.A(z2)
+        return torch.sigmoid(torch.dot(az1, az2))
 
     def get_W(self):
         A = next(self.A.parameters())

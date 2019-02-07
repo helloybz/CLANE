@@ -1,14 +1,14 @@
 import os
 from random import sample
 
-from torch.utils.data import Dataset, DataLoader
 import torch
+from torch.utils.data import Dataset
 
 from settings import DATA_PATH
 
 
 class CoraDataset(Dataset):
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.paper_ids = list()
         self.labels = list()
         self.X = None
@@ -47,6 +47,10 @@ class CoraDataset(Dataset):
                 citing = self.paper_ids.index(int(citing))
                 self.A[cited, citing] = 1
 
+        self.X = self.X.to(kwargs['device'])
+        # self.Z.to(kwargs['device'])
+        self.A = self.A.to(kwargs['device'])
+
     def __getitem__(self, index):
         ref_idx = [idx 
                    for idx, elem 
@@ -74,9 +78,15 @@ class CoraDataset(Dataset):
         ingoing_refs = self.A[doc_idx, :]
 
         if directed:
-            return ingoing_refs, outgoing_refs
+            refs = ingoing_refs, outgoing_refs
         else:
-            return outgoing_refs + ingoing_refs
+            refs = outgoing_refs + ingoing_refs
+
+        return [ref_idx
+                for ref_idx, flag
+                in enumerate(refs)
+                if flag == 1]
+
 
 
 def cora_collate(data):
