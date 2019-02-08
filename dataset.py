@@ -1,7 +1,8 @@
 import os
-from random import sample
+from random import sample, shuffle
 
 import torch
+from torch.nn.functional import pad
 from torch.utils.data import Dataset
 
 from settings import DATA_PATH
@@ -48,56 +49,48 @@ class CoraDataset(Dataset):
                 self.A[cited, citing] = 1
 
         self.X = self.X.to(kwargs['device'])
-        # self.Z.to(kwargs['device'])
         self.A = self.A.to(kwargs['device'])
+        self.Z = self.X.clone()
 
     def __getitem__(self, index):
-        ref_idx = [idx 
-                   for idx, elem 
-                   in enumerate(list(self.get_ref_ids(index)))
-                   if elem == 1]
-        sampled_ref_Z = self.Z[ref_idx]
-
-        unref_idx = [idx
-                     for idx, elem
-                     in enumerate(list(self.get_ref_ids(index)))
-                     if elem == 0]
-        if ref_idx:
-            unref_idx = sample(unref_idx, len(ref_idx))
-        else:
-            unref_idx = sample(unref_idx, 10)
-        sampled_unref_Z = self.Z[unref_idx]
-
-        return self.Z[index], sampled_ref_Z, sampled_unref_Z
+        return self.Z[index]
 
     def __len__(self):
         return len(self.paper_ids)
 
-    def get_ref_ids(self, doc_idx, directed=False):
-        outgoing_refs = self.A[:, doc_idx]
-        ingoing_refs = self.A[doc_idx, :]
+    def get_all_edges(self):
+        for pair in self.A.nonzero():
+            yield pair
 
-        if directed:
-            refs = ingoing_refs, outgoing_refs
-        else:
-            refs = outgoing_refs + ingoing_refs
-
-        return [ref_idx
-                for ref_idx, flag
-                in enumerate(refs)
-                if flag == 1]
-
+    def get_all_non_edges(self):
+        for z1, row in enumerate(self.A):
+            yield z1, (row == 0).nonzero()
 
 
 def cora_collate(data):
-    z, ref, unref = zip(*data)
-    zs = torch.stack(z)
+    batch_z, batch_z_ref, batch_z_unref = zip(*data)
 
-    return zs, ref, unref
+    batch_z = torch.stack(batch_z)
+
+    max_row_ref = max([ref_z.shape[0] for ref_z in batch_z_ref])
+    max_row_unref = max([unref_z.shape[0] for unref_z in batch_z_unref])
+
+    mask_ref = torch.Tensor([z_ref.shape[0] for z_ref in batch_z_ref]).cuda()
+    mask_unref = torch.Tensor([unref_z.shape[0] for unref_z in batch_z_unref]).cuda()
+
+    batch_ref_z = torch.stack(
+            [pad(ref_z, [0, 0, 0, max_row_ref - ref_z.shape[0]])
+             for ref_z in batch_z_ref])
+
+    batch_unref_z = torch.stack(
+            [pad(ref_z, [0, 0, 0, max_row_unref - ref_z.shape[0]])
+             for ref_z in batch_z_unref])
+
+    return batch_z, batch_ref_z, batch_unref_z
 
 
 class CiteseerDataset(Dataset):
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.paper_ids = list()
         self.labels = list()
         self.X = None
@@ -131,29 +124,25 @@ class CiteseerDataset(Dataset):
                 if not sample:
                     break
 
-                cited, citing = sample.split('\t')
-                cited = self.paper_ids.index(cited)
-                citing = self.paper_ids.index(citing)
-                self.A[cited, citing] = 1
+                cited, citing = sample.strip().split('\t')
+                try:
+                    cited = self.paper_ids.index(cited)
+                    citing = self.paper_ids.index(citing)
+                    self.A[cited, citing] = 1
+                except ValueError:
+                    pass
+        self.X = self.X.to(kwargs['device'])
+        self.A = self.A.to(kwargs['device'])
 
     def __getitem__(self, index):
-        ref_idx = [idx
-                   for idx, elem
-                   in enumerate(list(self.get_ref_ids(index)))
-                   if elem == 1]
-        sampled_ref_Z = self.Z[ref_idx]
+        ref_idx = (self.A[:, index] + self.A[index, :]).byte()
+        unref_idx = ref_idx == 0
+        shuffle(unref_idx)
+        unref_idx = unref_idx[:10]
+        ref_Z = self.Z[ref_idx]
+        unref_Z = self.Z[unref_idx]
 
-        unref_idx = [idx
-                     for idx, elem
-                     in enumerate(list(self.get_ref_ids(index)))
-                     if elem == 0]
-        if ref_idx:
-            unref_idx = sample(unref_idx, len(ref_idx))
-        else:
-            unref_idx = sample(unref_idx, 10)
-        sampled_unref_Z = self.Z[unref_idx]
-
-        return self.Z[index], sampled_ref_Z, sampled_unref_Z
+        return self.Z[index], ref_Z, unref_Z
 
     def __len__(self):
         return len(self.paper_ids)
@@ -168,8 +157,5 @@ class CiteseerDataset(Dataset):
             return outgoing_refs + ingoing_refs
 
 
-
 if __name__ == "__main__":
-    cora = CoraDataset()
-    print(cora[3])
-    print(len(cora))
+    dataset = CiteseerDataset()

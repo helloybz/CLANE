@@ -5,16 +5,17 @@ import pickle
 import numpy as np
 import torch
 from scipy.spatial.distance import euclidean
+from torch.distributions import Bernoulli
 from torch.nn.functional import cosine_similarity
 from torch.utils.data import DataLoader, Dataset
 
-from dataset import CoraDataset
+from dataset import CoraDataset, CiteseerDataset
 from dataset import cora_collate
-from models import SimilarityMethod2
+from models import EdgeProbability
 from settings import PICKLE_PATH
 
 
-def method_1(c_x, edges, **kwargs):
+def cosine_sim_method(c_x, edges, **kwargs):
     v_x = c_x.clone().to(kwargs['device'])
     is_converged = False
 
@@ -60,9 +61,9 @@ def method_1(c_x, edges, **kwargs):
     return v_x
 
 
-def method_2(dataset, **kwargs):
-    similarity_model = SimilarityMethod2(dim=dataset.X.shape[1])
-    similarity_model = similarity_model.cuda(kwargs['device'])
+def edge_prob_method(dataset, **kwargs):
+    edge_prob_model = EdgeProbability(dim=dataset.X.shape[1])
+    edge_prob_model = edge_prob_model.cuda(kwargs['device'])
 
     dataset.Z = dataset.X.clone()
 
@@ -72,102 +73,124 @@ def method_2(dataset, **kwargs):
 
         with torch.no_grad():
             step1_counter = 1
+            distance_list = list()
             while not step1_converged:
                 max_distance = -np.inf
-                step1_converged = True
 
                 for doc_id, _ in enumerate(dataset.Z):
-                    Z_ref = dataset.Z[(dataset.A[doc_id, :] + dataset.A[:, doc_id]).byte()]
-                    similarities = similarity_model(dataset.Z[doc_id], Z_ref)
-                    message = config.gamma * torch.mv(torch.t(Z_ref), similarities)
+                    Z_ref = dataset.Z[
+                        (dataset.A[doc_id, :] + dataset.A[:, doc_id]).byte()]
+                    similarities = edge_prob_model.get_sim(dataset.Z[doc_id],
+                                                           Z_ref)
+                    message = config.gamma * torch.mv(torch.t(Z_ref),
+                                                      similarities)
 
-                    updated_z = dataset.X[doc_id] + message
+                    newly_calced_z = dataset.X[doc_id] + message
 
-                    distance = dataset.Z[doc_id] - updated_z
-                    distance = torch.sum(distance ** 2)
+                    distance = dataset.Z[doc_id] - newly_calced_z
+                    distance = torch.sqrt(torch.sum(distance ** 2))
 
                     max_distance = max(max_distance, distance)
 
-                    dataset.Z[doc_id] = updated_z
+                    dataset.Z[doc_id] = newly_calced_z
 
                     print(
-                        'Method2 / UpdateZ / {0} / maximum_loss {1} / {2}/{3}'.format(
-                            step1_counter, max_distance, doc_id, dataset.Z.shape[0]),
-                        end='\r')
+                            'Method2 / UpdateZ / {0} / maximum_distance {1} / {2}/{3}'.format(
+                                    step1_counter, max_distance, doc_id,
+                                    dataset.Z.shape[0]),
+                            end='\r')
 
-                if max_distance > config.threshold_distance:
-                    step1_converged = False
-                step1_counter += 1
+                # TODO: 스텝1 수렴조건 추가
+                #     threshold 이하이거나 (현재)
+                #     일정 iteration 이상 변함이 없거나. (추가)
+
+                distance_list.append(max_distance.item())
+                if len(distance_list) == 10:
+                    distance_list = distance_list[1:]
+
+                if max_distance < config.threshold_distance:
+                    step1_converged = True
+                elif (len(distance_list) == 10 and
+                        max(distance_list) - min(distance_list) <
+                        config.threshold_distance):
+                    step1_converged = True
+                else:
+                    # still not converged
+                    step1_counter += 1
             print('step1 done')
 
         # check if Z is updated
-        if torch.all(torch.eq(previous_Z, Z)) == 1:
+        if torch.max(dataset.Z - previous_Z) < 0.01:
             print('Z is not updated.')
             break
-
-        dataset.Z = dataset.X.clone()
+        else:
+            print('Z is updated. Go to step2.')
 
         # step 2, "Update W"
-        def loss_W(_zs, _refs_batch, _unrefs_batch):
-            batch_loss = None
-            for idx, _z in enumerate(_zs):
-                if len(_refs_batch[idx]) != 0:
-                    ref_probs_edge = [torch.log(similarity_model.prob_edge(_z, _ref))
-                                      for _ref
-                                      in _refs_batch[idx]]
-                    ref_loss = torch.sum(torch.stack(ref_probs_edge), dim=0)
-                else:
-                    ref_loss = 0
 
-                if len(_unrefs_batch[idx]) != 0:
-                    unref_probs_edge = [torch.log(1 - similarity_model.prob_edge(_z, _unref))
-                                        for _unref
-                                        in _unrefs_batch[idx]]
-                    unref_loss = torch.sum(torch.stack(unref_probs_edge), dim=0)
-                else:
-                    unref_loss = 0
+        with torch.no_grad():
 
-                # print(ref_loss.shape, unref_loss.shape)
-                if batch_loss is not None:
-                    batch_loss += (ref_loss + unref_loss)
-                else:
-                    batch_loss = (ref_loss + unref_loss)
+            for epoch in range(config.epoch):
+                J_A = torch.zeros(edge_prob_model.A.weight.shape).to(kwargs['device'])
+                if epoch % 10 == 0:
+                    cost = torch.ones([1]).to(kwargs['device'])
 
-            _loss = -(batch_loss / config.batch_size)
-            return _loss
+                for z1, z2 in dataset.get_all_edges():
+                    prob_edge = edge_prob_model(dataset[z1], dataset[z2])
+                    # bernoulli = Bernoulli(probs=1-prob_edge)
+                    try:
+                        is_selected = (1-prob_edge).bernoulli().item()
+                    except RuntimeError:
+                        print(z1, z2)
+                        raise
+                    if is_selected == 1:
+                        A = edge_prob_model.A.weight
+                        j_A = torch.mm(
+                                torch.mm(dataset[z1].unsqueeze(-1),
+                                         dataset[z2].unsqueeze(0)),
+                                torch.t(A))
+                        J_A.add_(j_A * is_selected)
+                        if epoch % 10 == 0:
+                            cost.mul_(prob_edge)
 
-        similarity_model.train()
+                for z1, z3s in dataset.get_all_non_edges():
+                    prob_edges = edge_prob_model.forward_batch(
+                                     dataset[z1].unsqueeze(0),
+                                     dataset[z3s])
+                    is_selected = prob_edges.bernoulli().squeeze(-1)
+                    A = edge_prob_model.A.weight
+                    z1, z3s = torch.broadcast_tensors(dataset[z1], dataset[z3s].squeeze(-2))
+                    if epoch % 10 == 0:
+                        cost.mul_(torch.prod(prob_edges[is_selected.byte()]))
 
-        optimizer = torch.optim.Adam(params=similarity_model.parameters())
-        optimizer.zero_grad()
+                    is_selected, z3s = torch.broadcast_tensors(is_selected.unsqueeze(-1), z3s)
+                    sampled_z3s = is_selected * z3s
+                    j_A = torch.mm(
+                            torch.mm(torch.t(z1), sampled_z3s),
+                            torch.t(A))
+                    J_A.sub_(j_A)
 
-        for epoch in range(config.epoch):
-            dataloader = DataLoader(dataset,
-                                    batch_size=config.batch_size,
-                                    shuffle=True,
-                                    collate_fn=cora_collate,
-                                    )
-            optimizer.zero_grad()
-            for batch_idx, (zs, ref, unref) in enumerate(dataloader):
-                loss = loss_W(zs, ref, unref)
-                loss.backward()
-                optimizer.step()
+                edge_prob_model.A.weight.data.add_(config.lr * J_A)
 
-                print('Method2 / UpdateA / epoch: {} / batch: {} / loss: {}'.format(
-                        epoch, batch_idx, loss.data[0]), end='\r')
+                # 일정 에폭마다 샘플된 페어들에 대해서 코스트 계산
+                if epoch % 10 == 0:
+                    print('epoch: {} , cost: {}'.format(epoch, cost))
 
-    return Z
+            print('step2 done')
+    return dataset
 
 
 def main(config):
     if torch.cuda.is_available():
-        device = torch.device('cuda')
+        device = torch.device('cuda:{}'.format(config.gpu))
     else:
         device = torch.device('cpu')
     print('[DEVICE] {}'.format(device))
 
     if config.dataset == 'cora':
         dataset = CoraDataset(device=device)
+    elif config.dataset == 'citeseer':
+        dataset = CiteseerDataset(device=device)
     else:
         raise ValueError
     print('DATASET LOADED.')
@@ -176,36 +199,32 @@ def main(config):
         # v = method_1(c_x, edges, device=device)
         pass
     elif config.method == 2:
-        Z = method_2(dataset, device=device)
+        dataset = edge_prob_method(dataset, device=device)
     else:
         pass
 
-    pickle.dump(Z, open(
-            os.path.join(PICKLE_PATH, config.dataset, 'v_{}'.format(
-                    config.dataset,
-            )), 'wb'))
-
-    pickle.dump(Z, open(
-            os.path.join(PICKLE_PATH, config.dataset, 'v_{}_{}_{}_{}_{}_{}'.format(
-                    config.dataset,
-                    config.method,
-                    config.epoch,
-                    config.batch_size,
-                    config.gamma,
-                    config.threshold_distance,
-            )), 'wb'))
-    # print(len(edges))
+    pickle.dump(dataset.Z.cpu().data.numpy(), open(
+            os.path.join(PICKLE_PATH, config.dataset,
+                         'v_{}_method{}_epoch{}_batch{}_gamma{}_thr{}'.format(
+                                 config.dataset,
+                                 config.method,
+                                 config.epoch,
+                                 config.batch_size,
+                                 config.gamma,
+                                 config.threshold_distance,
+                         )), 'wb'))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str)
-    parser.add_argument('--directed', type=bool, default=False)
     parser.add_argument('--method', type=int, default=1)
     parser.add_argument('--gamma', type=float, default=0.9)
     parser.add_argument('--threshold_distance', type=float, default=0.001)
-    parser.add_argument('--epoch', type=int, default=3)
+    parser.add_argument('--epoch', type=int, default=20)
     parser.add_argument('--batch_size', type=int, default=100)
+    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--gpu', type=int, default=0)
 
     config = parser.parse_args()
     print(config)

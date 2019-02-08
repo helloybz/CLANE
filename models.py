@@ -4,9 +4,10 @@ import gensim
 import torch
 from gensim.parsing import strip_non_alphanum, strip_numeric, \
     strip_multiple_whitespaces, strip_short, preprocess_string
+from numpy import finfo
 from torch import nn
 from torchvision import models, transforms
-
+from torchvision.transforms import Normalize
 
 TEXT_FILTERS = [lambda x: x.lower(), strip_non_alphanum, strip_numeric,
                 strip_multiple_whitespaces, strip_short]
@@ -98,32 +99,37 @@ class Doc2Vec(nn.Module):
         return self.model.infer_vector(corpus).reshape((1, -1))
 
 
-class SimilarityMethod2(nn.Module):
+class EdgeProbability(nn.Module):
     def __init__(self, dim):
-        super(SimilarityMethod2, self).__init__()
+        super(EdgeProbability, self).__init__()
 
         self.A = nn.Linear(in_features=dim,
                            out_features=dim,
                            bias=False)
+        self.B = nn.Linear(in_features=dim,
+                           out_features=dim,
+                           bias=False)
         self.softmax = nn.Softmax(dim=0)
 
-    def forward(self, z, z_ref):
+    def forward(self, z1, z2):
+        return torch.sigmoid(torch.dot(self.A(z1), self.B(z2)))
+
+    def forward_batch(self, batch_z, batch_ref):
+        az = self.A(batch_z)
+        az = torch.unsqueeze(input=az, dim=1)
+        bz_ref = self.B(batch_ref)
+        bz_ref = bz_ref.transpose(1, 2)
+        inner_term = torch.matmul(az, bz_ref)
+        inner_term = torch.squeeze(input=inner_term, dim=1)
+        return torch.sigmoid(inner_term)
+        # sum_inner_term = torch.sum(inner_term, dim=1)
+        # normalized = sum_inner_term / sum_inner_term.max()
+
+        # sigmoid = torch.sigmoid(normalized)
+
+        # return sigmoid
+
+    def get_sim(self, z, z_ref):
         Az = self.A(z)
         A_z_ref = self.A(z_ref)
         return self.softmax(torch.sigmoid(torch.mv(self.A(A_z_ref), Az)))
-        # print(torch.tensor([self.prob_edge(Az, z_ref) for z_ref in A_z_ref],
-        #                    device=torch.device('cuda')))
-        # a = torch.tensor(
-        #         [torch.sigmoid(torch.mm(A_zs.unsqueeze(0),
-        #                                 torch.t(A_refs.unsqueeze(0))))
-        #          for A_refs in A_refss])
-        # return self.softmax(a)
-
-    def prob_edge(self, z1, z2):
-        az1 = self.A(z1)
-        az2 = self.A(z2)
-        return torch.sigmoid(torch.dot(az1, az2))
-
-    def get_W(self):
-        A = next(self.A.parameters())
-        return torch.matmul(torch.transpose(A, 0, 1), A)
