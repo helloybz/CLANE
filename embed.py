@@ -10,10 +10,10 @@ from torch.nn.functional import cosine_similarity
 from torch.utils.data import DataLoader, Dataset
 
 from dataset import CoraDataset, CiteseerDataset
-from dataset import cora_collate
 from models import EdgeProbability
 from settings import PICKLE_PATH
 
+os.environ['CUDA_LAUNCHING_BLOCKING'] = '1'
 
 def cosine_sim_method(c_x, edges, **kwargs):
     v_x = c_x.clone().to(kwargs['device'])
@@ -68,43 +68,45 @@ def edge_prob_method(dataset, **kwargs):
     dataset.Z = dataset.X.clone()
 
     while True:
-        step1_converged = False
+        step1_converged = False # Initialize convergence state.
         previous_Z = dataset.Z.clone()
 
         with torch.no_grad():
             step1_counter = 1
-            distance_list = list()
+            distance_list = torch.Tensor([]).cuda(kwargs['device'])
+
             while not step1_converged:
                 max_distance = -np.inf
 
-                for doc_id, _ in enumerate(dataset.Z):
-                    Z_ref = dataset.Z[
-                        (dataset.A[doc_id, :] + dataset.A[:, doc_id]).byte()]
-                    similarities = edge_prob_model.get_sim(dataset.Z[doc_id],
-                                                           Z_ref)
-                    message = config.gamma * torch.mv(torch.t(Z_ref),
+                for doc_id in range(dataset.Z.shape[0]):
+                    z1 = dataset[doc_id]
+                    z2s = dataset[dataset.A[doc_id].nonzero()]
+                    
+                    similarities = edge_prob_model.get_similarities(z1, z2s)
+
+                    message = config.gamma * torch.mv(torch.t(z2s.squeeze(-2)),
                                                       similarities)
 
-                    newly_calced_z = dataset.X[doc_id] + message
+                    newly_calculated_z = dataset.X[doc_id] + message
 
-                    distance = dataset.Z[doc_id] - newly_calced_z
-                    distance = torch.sqrt(torch.sum(distance ** 2))
+                    distance = dataset.Z[doc_id] - newly_calculated_z
+                    distance = torch.sqrt(torch.sum(distance ** 2)).unsqueeze(-1)
 
                     max_distance = max(max_distance, distance)
 
-                    dataset.Z[doc_id] = newly_calced_z
+                    dataset.Z[doc_id] = newly_calculated_z
 
-                    print(
-                            'Method2 / UpdateZ / {0} / maximum_distance {1} / {2}/{3}'.format(
-                                    step1_counter, max_distance, doc_id,
-                                    dataset.Z.shape[0]),
-                            end='\r')
+                    print('UpdateZ / {0} / maximum_distance {1:.6f} / {2:4d}/{3:4d}'\
+                          .format(step1_counter, 
+                                  max_distance.item(), 
+                                  doc_id,
+                                  dataset.Z.shape[0]),
+                          end='\r')
 
-                # TODO: 스텝1 수렴조건 추가
-                #     threshold 이하이거나 (현재)
-                #     일정 iteration 이상 변함이 없거나. (추가)
+                     # UpdateZ done
 
-                distance_list.append(max_distance.item())
+                distance_list = torch.cat((distance_list, max_distance))
+
                 if len(distance_list) == 10:
                     distance_list = distance_list[1:]
 
@@ -117,7 +119,7 @@ def edge_prob_method(dataset, **kwargs):
                 else:
                     # still not converged
                     step1_counter += 1
-            print('step1 done')
+            print('Step 1 done')
 
         # check if Z is updated
         if torch.max(dataset.Z - previous_Z) < 0.01:
@@ -131,18 +133,19 @@ def edge_prob_method(dataset, **kwargs):
         with torch.no_grad():
 
             for epoch in range(config.epoch):
-                J_A = torch.zeros(edge_prob_model.A.weight.shape).to(kwargs['device'])
+                J_A = torch.zeros(edge_prob_model.A.weight.shape) \
+                           .to(kwargs['device'])
+                J_B = torch.zeros(edge_prob_model.B.weight.shape) \
+                           .to(kwargs['device'])
+
                 if epoch % 10 == 0:
                     cost = torch.ones([1]).to(kwargs['device'])
 
                 for z1, z2 in dataset.get_all_edges():
                     prob_edge = edge_prob_model(dataset[z1], dataset[z2])
-                    # bernoulli = Bernoulli(probs=1-prob_edge)
-                    try:
-                        is_selected = (1-prob_edge).bernoulli().item()
-                    except RuntimeError:
-                        print(z1, z2)
-                        raise
+
+                    is_selected = (1-prob_edge).bernoulli()
+                    
                     if is_selected == 1:
                         A = edge_prob_model.A.weight
                         j_A = torch.mm(

@@ -122,14 +122,9 @@ class EdgeProbability(nn.Module):
         inner_term = torch.matmul(az, bz_ref)
         inner_term = torch.squeeze(input=inner_term, dim=1)
         return torch.sigmoid(inner_term)
-        # sum_inner_term = torch.sum(inner_term, dim=1)
-        # normalized = sum_inner_term / sum_inner_term.max()
+ 
+    def get_similarities(self, z, z_ref):
+        probs = self.forward_batch(z.unsqueeze(0), z_ref)
+        softmax_probs = self.softmax(probs).squeeze(-1)
+        return softmax_probs
 
-        # sigmoid = torch.sigmoid(normalized)
-
-        # return sigmoid
-
-    def get_sim(self, z, z_ref):
-        Az = self.A(z)
-        A_z_ref = self.A(z_ref)
-        return self.softmax(torch.sigmoid(torch.mv(self.A(A_z_ref), Az)))
