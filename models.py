@@ -112,6 +112,7 @@ class EdgeProbability(nn.Module):
         self.softmax = nn.Softmax(dim=0)
 
     def forward(self, z1, z2):
+        # print('inner sigmoid: ', torch.dot(self.A(z1), self.B(z2)))
         return torch.sigmoid(torch.dot(self.A(z1), self.B(z2)))
 
     def forward_batch(self, batch_z, batch_ref):
