@@ -12,6 +12,7 @@ from torch.nn import CosineSimilarity
 from torch.utils.data import DataLoader, Dataset
 
 from dataset import CoraDataset, CiteseerDataset
+from helper import  normalize_elwise
 from models import EdgeProbability
 from settings import PICKLE_PATH
 
@@ -67,49 +68,46 @@ def edge_prob_method(dataset, **kwargs):
         step1_converged = False
 
         step1_counter = 1
-        distance_list = torch.Tensor([]).cuda(kwargs['device'])
+        delta_list = []
 
         step1_start = time.time()
         while not step1_converged:
-            max_distance = -np.inf
+            maximum_delta = -np.inf
+            previous_Z = dataset.Z.clone()
 
             for doc_id in range(len(dataset)):
-                z1 = dataset[doc_id]
-                z2s = dataset[dataset.A[doc_id].nonzero()]
+                z = dataset[doc_id]
+                ref_indices = dataset.A[doc_id].nonzero()
+                Z_ref = dataset[ref_indices]
+                if Z_ref.dim() == 1: Z_ref.unsqueeze_(0)
                 
-                similarities = edge_prob_model.get_similarities(z1, z2s)
+                messages = torch.mv(Z_ref.squeeze(-2).t(),
+                                    edge_prob_model.get_similarities(z, Z_ref))
+                newly_calculated_z = dataset.X[doc_id] + config.gamma * messages
 
-                message = config.gamma * torch.mv(torch.t(z2s.squeeze(-2)),
-                                                  similarities)
-
-                newly_calculated_z = dataset.X[doc_id] + message
-
-                distance = dataset.Z[doc_id] - newly_calculated_z
-                distance = torch.sqrt(torch.sum(distance ** 2)).unsqueeze(-1)
-
-                max_distance = max(max_distance, distance)
+                delta = torch.norm(newly_calculated_z - z, 2)
+                maximum_delta = max(maximum_delta, delta)
 
                 dataset.Z[doc_id] = newly_calculated_z
 
                 print('UpdateZ / {0} / maximum_distance {1:.6f} / {2:4d}/{3:4d}'\
                       .format(step1_counter, 
-                              max_distance.item(), 
+                              maximum_delta, 
                               doc_id,
-                              dataset.Z.shape[0]),
+                              len(dataset)),
                       end='\r')
-
-                 # UpdateZ done
+                
+            # UpdateZ done
             
-            distance_list = torch.cat((distance_list, max_distance))
+            delta_list.append(maximum_delta)
 
-            if len(distance_list) == 10:
-                distance_list = distance_list[1:]
+            if len(delta_list) == 10:
+                delta_list = delta_list[1:]
 
-            if max_distance < config.threshold_distance:
+            if maximum_delta < config.epsilon:
                 step1_converged = True
-            elif (len(distance_list) == 10 and
-                    max(distance_list) - min(distance_list) <
-                    config.threshold_distance):
+            elif (len(delta_list) == 10 and
+                    max(delta_list) - min(delta_list) < config.epsilon):
                 step1_converged = True
             else:
                 # still not converged
@@ -119,15 +117,16 @@ def edge_prob_method(dataset, **kwargs):
         step1_end = time.time()
         print("Z convergence time: {:.3f}".format(step1_end - step1_start))
 
-
         # check if Z is updated
-        if torch.max(dataset.Z - previous_Z) < 0.01:
+        if torch.norm(dataset.Z - previous_Z, 2) == 0:
             print('Z is not updated.')
             break
         else:
-            print('Z is updated. Go to step2.')
+            print('Z is updated. Go to step2. {}'.format(
+                    torch.norm(dataset.Z - previous_Z, 2)))
 
         # step 2, "Update W"
+        step2_start = time.time()
         for epoch in range(config.epoch):
             step2_epoch_start = time.time()
             
@@ -139,20 +138,20 @@ def edge_prob_method(dataset, **kwargs):
             if epoch % config.log_period == 0:
                 cost = torch.zeros([1]).to(kwargs['device'])
              
-            for z1, z2 in dataset.get_all_edges():
-                prob_edge = edge_prob_model(dataset[z1], dataset[z2])
+            for doc_id, ref_id in dataset.get_all_edges():
+                prob_edge = edge_prob_model(dataset[doc_id], dataset[ref_id])
                 
-                is_selected = (1-prob_edge).bernoulli()
+                is_selected = prob_edge.bernoulli()
                 
                 if is_selected == 1:
                     
-                    j_A = torch.mm(dataset[z2].unsqueeze(-1),
-                                   dataset[z1].unsqueeze(0))
+                    j_A = torch.mm(dataset[ref_id].unsqueeze(-1),
+                                   dataset[doc_id].unsqueeze(0))
                     j_A = torch.mm(edge_prob_model.B.weight.clone(),
                                    j_A)
                     
-                    j_B = torch.mm(dataset[z2].unsqueeze(-1),
-                                   dataset[z1].unsqueeze(0))
+                    j_B = torch.mm(dataset[ref_id].unsqueeze(-1),
+                                   dataset[doc_id].unsqueeze(0))
                     j_B = torch.mm(j_B,
                                    torch.t(edge_prob_model.A.weight.clone()))
                     
@@ -162,14 +161,12 @@ def edge_prob_method(dataset, **kwargs):
                     if epoch % config.log_period == 0:
                         cost.sub_(torch.log(prob_edge))                    
                 
-                print("Update Params edge pair: {:4d}/{:4d}".format(z1,len(dataset)), end='\r') 
-             
-            for z1, z3s in dataset.get_all_non_edges():
-                print("Update Params non-edge pair: {:4d}/{:4d}".format(z1, len(dataset)), end='\r')
-                
+                print("Update Params edge pair: {:4d}/{:4d}".format(doc_id, len(dataset)), end='\r') 
+            
+            for doc_id, unref_ids in dataset.get_all_non_edges():
                 prob_edges = edge_prob_model.forward_batch(
-                                 dataset[z1].unsqueeze(0),
-                                 dataset[z3s])
+                                 dataset[doc_id].unsqueeze(0),
+                                 dataset[unref_ids]).squeeze()
                 
                 if config.sampling == 'bernoulli':
                     is_selected = prob_edges.bernoulli().squeeze()
@@ -177,34 +174,35 @@ def edge_prob_method(dataset, **kwargs):
                     is_selected = prob_edges.sort(dim=0)[1][:100].squeeze()
                 else:
                     raise ValueError
-
-                z1 = dataset[z1]
-                z3s = dataset[z3s.squeeze()][is_selected]
-
-                if epoch % config.log_period == 0:
-                    pdb.set_trace()
-                    cost.sub_(torch.sum(torch.log(prob_edges[is_selected])))
-                  
-                for indices in DataLoader(range(z3s.shape[0]),
+                
+                z = dataset[doc_id]
+                Z_unref = dataset[unref_ids.squeeze()][is_selected]
+        
+                for indices in DataLoader(range(Z_unref.shape[0]),
                                           batch_size=400):
                     
-                    j_A = torch.matmul(z1.unsqueeze(-1),
-                                       z3s[indices].unsqueeze(-2))
+                    j_A = torch.matmul(z.unsqueeze(-1),
+                                       Z_unref[indices].unsqueeze(-2))
                     j_A = torch.matmul(edge_prob_model.B.weight,
                                        j_A)
                     j_A = torch.sum(j_A, dim=0)
                     J_A.sub_(j_A)
-                    # del j_A; torch.cuda.empty_cache()
 
-                    j_B = torch.matmul(z3s[indices].unsqueeze(-1),
-                                       z1.unsqueeze(0))
+                    j_B = torch.matmul(Z_unref[indices].unsqueeze(-1),
+                                       z.unsqueeze(0))
                     j_B = torch.transpose(j_B, 1, 2)
                     j_B = edge_prob_model.A(j_B)
                     j_B = torch.transpose(j_B, 1, 2)
                     j_B = torch.sum(j_B, dim=0)
                     J_B.sub_(j_B)
-                    # del j_B; torch.cuda.empty_cache()
+               
+                if epoch % config.log_period == 0:
+                    cost.sub_(torch.sum(torch.log(1-prob_edges[is_selected])))
 
+                print("Update Params non-edge pair: {:4d}/{:4d}".format(doc_id, len(dataset)), end='\r')
+            
+            # normalize gradients.
+            J_A, J_B = normalize_elwise(J_A, J_B)
             edge_prob_model.A.weight.data.add_(config.lr * J_A)
             edge_prob_model.B.weight.data.add_(config.lr * J_B)
 

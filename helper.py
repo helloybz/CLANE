@@ -1,3 +1,4 @@
+import pdb
 import os
 import pickle
 from multiprocessing.pool import ThreadPool
@@ -8,6 +9,7 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 import numpy as np
+from torch.nn.functional import normalize
 
 from settings import PICKLE_PATH, DATA_PATH
 
@@ -114,3 +116,11 @@ if __name__ == '__main__':
     for loop_idx, (doc_idx, label) in enumerate(pool.imap(_painter_label, range(len(docs)))):
         labels[doc_idx] = label
         print('[{}/{}]'.format(loop_idx, len(docs)), end='\r')
+
+def normalize_elwise(*tensors):
+    keep_dim = [tensor.shape for tensor in tensors]
+    tensors = [tensor.flatten() for tensor in tensors]
+    tensors = [normalize(tensor, dim=0) for tensor in tensors]
+    tensors = [tensor.reshape(dim) for tensor, dim in zip(tensors, keep_dim)]
+    return tuple(tensors)
+
