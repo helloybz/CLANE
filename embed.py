@@ -5,8 +5,9 @@ import pickle
 import time
 
 import numpy as np
-import torch
 from scipy.spatial.distance import euclidean
+from tensorboardX import SummaryWriter
+import torch
 from torch.distributions import Bernoulli
 from torch.nn import CosineSimilarity
 from torch.utils.data import DataLoader, Dataset
@@ -56,6 +57,7 @@ def cosine_sim_method(dataset, **kwargs):
            
 
 def edge_prob_method(dataset, **kwargs):
+    writer = SummaryWriter()
     torch.set_grad_enabled(False)
    
     edge_prob_model = EdgeProbability(dim=dataset.X.shape[1])
@@ -63,10 +65,11 @@ def edge_prob_method(dataset, **kwargs):
     for p in edge_prob_model.parameters(): p.requires_grad = False
     
     dataset.Z = dataset.X.clone()
-    
+    iter_counter = 0
     while True:
-        step1_converged = False
+        iter_counter += 1
 
+        step1_converged = False
         step1_counter = 1
         delta_list = []
 
@@ -115,16 +118,33 @@ def edge_prob_method(dataset, **kwargs):
 
         print('Step 1 done')
         step1_end = time.time()
+        step1_time = torch.Tensor([step1_end-step1_start])
+        step1_counter_ = torch.Tensor([step1_counter])
+        writer.add_scalar('Method2_epoch{}/Convergence time of Updating Z'.format(config.epoch),
+                          step1_time[0], iter_counter)
+        writer.add_scalar('Method2_epoch{}/Number of iteration during convergence of Z'.format(config.epoch), step1_counter_[0], iter_counter)
         print("Z convergence time: {:.3f}".format(step1_end - step1_start))
 
         # check if Z is updated
-        if torch.norm(dataset.Z - previous_Z, 2) == 0:
+        delta_Z = torch.norm(dataset.Z - previous_Z, 2)
+        if delta_Z == 0:
             print('Z is not updated.')
             break
         else:
-            print('Z is updated. Go to step2. {}'.format(
-                    torch.norm(dataset.Z - previous_Z, 2)))
-
+            print('Z is updated. Go to step2. {}'.format(delta_Z))
+            pickle.dump(dataset.Z.clone().cpu().data.numpy(), 
+                        open(os.path.join(PICKLE_PATH, 
+                                          config.dataset,
+                                          'temp_v_{}_method{}_epoch{}_batch{}_gamma{}_thr{}_{}'.format(
+                                             config.dataset,
+                                             config.method,
+                                             config.epoch,
+                                             config.batch_size,
+                                             config.gamma,
+                                             config.epsilon,
+                                             delta_Z)), 
+                             'wb'))
+            
         # step 2, "Update W"
         step2_start = time.time()
         for epoch in range(config.epoch):
@@ -200,6 +220,7 @@ def edge_prob_method(dataset, **kwargs):
                     cost.sub_(torch.sum(torch.log(1-prob_edges[is_selected])))
 
                 print("Update Params non-edge pair: {:4d}/{:4d}".format(doc_id, len(dataset)), end='\r')
+
             
             # normalize gradients.
             J_A, J_B = normalize_elwise(J_A, J_B)
@@ -209,13 +230,16 @@ def edge_prob_method(dataset, **kwargs):
             # 일정 에폭마다 샘플된 페어들에 대해서 코스트 계산
             if epoch % config.log_period == 0:
                 print('epoch: {} , cost: {}'.format(epoch, cost))
-                
+                writer.add_scalar('Method2_epoch{}/Cost'.format(config.epoch),
+                                  cost[0], ((iter_counter-1) * config.epoch) + epoch)    
             step2_epoch_end = time.time()
+            step2_epoch_time = torch.Tensor([step2_epoch_end-step2_epoch_start])
             print("step2 epoch time: {:.3f}".format(step2_epoch_end - step2_epoch_start))
         print('step2 done')
         step2_end = time.time()
         print("step2 time: {:.3f}".format(step2_end - step2_start)
         )
+    writer.close()
     return dataset
 
 
@@ -225,7 +249,7 @@ def main(config):
     else:
         device = torch.device('cpu')
     print('[DEVICE] {}'.format(device))
-
+    
     if config.dataset == 'cora':
         dataset = CoraDataset(device=device)
     elif config.dataset == 'citeseer':
@@ -233,7 +257,7 @@ def main(config):
     else:
         raise ValueError
     print('DATASET LOADED.')
-
+    
     if config.method == 1:
         dataset = cosine_sim_method(dataset, device=device)
     elif config.method == 2:

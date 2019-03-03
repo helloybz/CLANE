@@ -120,7 +120,6 @@ class EdgeProbability(nn.Module):
         az = self.A(batch_z)
         az = torch.unsqueeze(input=az, dim=1)
         bz_ref = self.B(batch_ref)
-        pdb.set_trace()
         bz_ref = bz_ref.transpose(1, 2)
         inner_term = torch.matmul(az, bz_ref)
         inner_term = torch.squeeze(input=inner_term, dim=1)
