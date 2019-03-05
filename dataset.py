@@ -26,7 +26,7 @@ class CoraDataset(Dataset):
 
                 paper_id, *content, label = sample.split('\t')
                 self.paper_ids.append(int(paper_id))
-                self.labels.append(label)
+                self.labels.append(label.strip())
                 content = torch.Tensor([[int(value) for value in content]])
 
                 if self.X is not None:
@@ -51,6 +51,8 @@ class CoraDataset(Dataset):
         self.X = self.X.to(kwargs['device'])
         self.A = self.A.to(kwargs['device'])
         self.Z = self.X.clone()
+        label_categories = list(set(self.labels))
+        self.labels = [label_categories.index(label) for label in self.labels]
 
     def __getitem__(self, index):
         return self.Z[index]
