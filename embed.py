@@ -5,7 +5,6 @@ import pickle
 import time
 
 import numpy as np
-from scipy.spatial.distance import euclidean
 from tensorboardX import SummaryWriter
 import torch
 from torch.distributions import Bernoulli
@@ -59,13 +58,23 @@ def cosine_sim_method(dataset, **kwargs):
 def edge_prob_method(dataset, **kwargs):
     writer = SummaryWriter()
     torch.set_grad_enabled(False)
-   
-    edge_prob_model = EdgeProbability(dim=dataset.X.shape[1])
+
+    if config.model_load is not None:
+        edge_prob_model = torch.load(os.path.join(PICKLE_PATH, 'models', 
+                    config.model_load))
+        checkpoint = torch.load(os.path.join(PICKLE_PATH, 'checkpoints', config.model_load))
+        iter_counter = checkpoint['iter_counter']
+        dataset.Z = checkpoint['dataset_Z']
+
+    else:
+        edge_prob_model = EdgeProbability(dim=dataset.X.shape[1])
+        iter_counter = 0
+        dataset.Z = dataset.X.clone()
+
     edge_prob_model = edge_prob_model.cuda(kwargs['device'])
+
     for p in edge_prob_model.parameters(): p.requires_grad = False
     
-    dataset.Z = dataset.X.clone()
-    iter_counter = 0
     while True:
         iter_counter += 1
 
@@ -239,6 +248,15 @@ def edge_prob_method(dataset, **kwargs):
         step2_end = time.time()
         print("step2 time: {:.3f}".format(step2_end - step2_start)
         )
+        # model save
+        torch.save(edge_prob_model,os.path.join(
+                    PICKLE_PATH, 'models', config.model_tag))
+        checkpoint = {
+            'iter_counter': iter_counter,
+            'dataset_Z': dataset.Z.clone()
+        }
+        torch.save(checkpoint, os.path.join(
+                    PICKLE_PATH, 'checkpoints', config.model_tag))
     writer.close()
     return dataset
 
@@ -290,6 +308,10 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--log_period', type=int, default=1)
     parser.add_argument('--sampling', type=str, default='bernoulli')
+    import datetime
+    model_tag = str(datetime.datetime.today().isoformat('-')).split('.')[0]
+    parser.add_argument('--model_tag', type=str, default=model_tag)
+    parser.add_argument('--model_load', type=str)
 
     config = parser.parse_args()
     print(config)
