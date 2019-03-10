@@ -56,8 +56,8 @@ def cosine_sim_method(dataset, **kwargs):
            
 
 def edge_prob_method(dataset, **kwargs):
-    writer = SummaryWriter()
-    torch.set_grad_enabled(False)
+    writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
+    # torch.set_grad_enabled(False)
 
     if config.model_load is not None:
         edge_prob_model = torch.load(os.path.join(PICKLE_PATH, 'models', 
@@ -129,9 +129,8 @@ def edge_prob_method(dataset, **kwargs):
         step1_end = time.time()
         step1_time = torch.Tensor([step1_end-step1_start])
         step1_counter_ = torch.Tensor([step1_counter])
-        writer.add_scalar('Method2_epoch{}/Convergence time of Updating Z'.format(config.epoch),
+        writer.add_scalar('{}/Convergence time Updating Z'.format(config.model_tag),
                           step1_time[0], iter_counter)
-        writer.add_scalar('Method2_epoch{}/Number of iteration during convergence of Z'.format(config.epoch), step1_counter_[0], iter_counter)
         print("Z convergence time: {:.3f}".format(step1_end - step1_start))
 
         # check if Z is updated
@@ -167,28 +166,28 @@ def edge_prob_method(dataset, **kwargs):
             if epoch % config.log_period == 0:
                 cost = torch.zeros([1]).to(kwargs['device'])
              
-            for doc_id, ref_id in dataset.get_all_edges():
-                prob_edge = edge_prob_model(dataset[doc_id], dataset[ref_id])
-                
-                is_selected = prob_edge.bernoulli()
-                
-                if is_selected == 1:
-                    
-                    j_A = torch.mm(dataset[ref_id].unsqueeze(-1),
-                                   dataset[doc_id].unsqueeze(0))
-                    j_A = torch.mm(edge_prob_model.B.weight.clone(),
-                                   j_A)
-                    
-                    j_B = torch.mm(dataset[ref_id].unsqueeze(-1),
-                                   dataset[doc_id].unsqueeze(0))
-                    j_B = torch.mm(j_B,
-                                   torch.t(edge_prob_model.A.weight.clone()))
-                    
-                    J_A.add_(j_A)
-                    J_B.add_(j_B)
-
-                    if epoch % config.log_period == 0:
-                        cost.sub_(torch.log(prob_edge))                    
+#            for doc_id, ref_id in dataset.get_all_edges():
+#                prob_edge = edge_prob_model(dataset[doc_id], dataset[ref_id])
+#                
+#                is_selected = prob_edge.bernoulli()
+#                
+#                if is_selected == 1:
+#                    
+#                    j_A = torch.mm(dataset[ref_id].unsqueeze(-1),
+#                                   dataset[doc_id].unsqueeze(0))
+#                    j_A = torch.mm(edge_prob_model.B.weight.clone(),
+#                                   j_A)
+#                    
+#                    j_B = torch.mm(dataset[ref_id].unsqueeze(-1),
+#                                   dataset[doc_id].unsqueeze(0))
+#                    j_B = torch.mm(j_B,
+#                                   torch.t(edge_prob_model.A.weight.clone()))
+#                    
+#                    J_A.add_(j_A)
+#                    J_B.add_(j_B)
+#
+#                    if epoch % config.log_period == 0:
+#                        cost.sub_(torch.log(prob_edge))                    
                 
                 print("Update Params edge pair: {:4d}/{:4d}".format(doc_id, len(dataset)), end='\r') 
             
@@ -199,8 +198,9 @@ def edge_prob_method(dataset, **kwargs):
                 
                 if config.sampling == 'bernoulli':
                     is_selected = prob_edges.bernoulli().squeeze()
-                elif config.sampling == 'top100':
-                    is_selected = prob_edges.sort(dim=0)[1][:100].squeeze()
+                elif config.sampling.startswith('top'):
+                    number_of_sample = int(config.sampling.split('top')[-1])
+                    is_selected = prob_edges.sort(dim=0)[1][:number_of_sample].squeeze()
                 else:
                     raise ValueError
                 
@@ -209,9 +209,9 @@ def edge_prob_method(dataset, **kwargs):
         
                 for indices in DataLoader(range(Z_unref.shape[0]),
                                           batch_size=400):
-                    
                     j_A = torch.matmul(z.unsqueeze(-1),
                                        Z_unref[indices].unsqueeze(-2))
+
                     j_A = torch.matmul(edge_prob_model.B.weight,
                                        j_A)
                     j_A = torch.sum(j_A, dim=0)
@@ -239,8 +239,8 @@ def edge_prob_method(dataset, **kwargs):
             # 일정 에폭마다 샘플된 페어들에 대해서 코스트 계산
             if epoch % config.log_period == 0:
                 print('epoch: {} , cost: {}'.format(epoch, cost))
-                writer.add_scalar('Method2_epoch{}/Cost'.format(config.epoch),
-                                  cost[0], ((iter_counter-1) * config.epoch) + epoch)    
+                writer.add_scalar('{}/Cost'.format(config.model_tag),
+                                  cost[0], ((iter_counter-1) * config.epoch) + epoch)
             step2_epoch_end = time.time()
             step2_epoch_time = torch.Tensor([step2_epoch_end-step2_epoch_start])
             print("step2 epoch time: {:.3f}".format(step2_epoch_end - step2_epoch_start))
