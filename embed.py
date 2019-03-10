@@ -56,8 +56,9 @@ def cosine_sim_method(dataset, **kwargs):
            
 
 def edge_prob_method(dataset, **kwargs):
-    writer = SummaryWriter()
-    torch.set_grad_enabled(False)
+    pdb.set_trace()
+    writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
+    # torch.set_grad_enabled(False)
 
     if config.model_load is not None:
         edge_prob_model = torch.load(os.path.join(PICKLE_PATH, 'models', 
