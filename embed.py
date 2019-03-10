@@ -56,7 +56,6 @@ def cosine_sim_method(dataset, **kwargs):
            
 
 def edge_prob_method(dataset, **kwargs):
-    pdb.set_trace()
     writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
     # torch.set_grad_enabled(False)
 
@@ -130,9 +129,8 @@ def edge_prob_method(dataset, **kwargs):
         step1_end = time.time()
         step1_time = torch.Tensor([step1_end-step1_start])
         step1_counter_ = torch.Tensor([step1_counter])
-        writer.add_scalar('Method2_epoch{}/Convergence time of Updating Z'.format(config.epoch),
+        writer.add_scalar('{}/Convergence time Updating Z'.format(config.model_tag),
                           step1_time[0], iter_counter)
-        writer.add_scalar('Method2_epoch{}/Number of iteration during convergence of Z'.format(config.epoch), step1_counter_[0], iter_counter)
         print("Z convergence time: {:.3f}".format(step1_end - step1_start))
 
         # check if Z is updated
@@ -240,8 +238,8 @@ def edge_prob_method(dataset, **kwargs):
             # 일정 에폭마다 샘플된 페어들에 대해서 코스트 계산
             if epoch % config.log_period == 0:
                 print('epoch: {} , cost: {}'.format(epoch, cost))
-                writer.add_scalar('Method2_epoch{}/Cost'.format(config.epoch),
-                                  cost[0], ((iter_counter-1) * config.epoch) + epoch)    
+                writer.add_scalar('{}/Cost'.format(config.model_tag),
+                                  cost[0], ((iter_counter-1) * config.epoch) + epoch)
             step2_epoch_end = time.time()
             step2_epoch_time = torch.Tensor([step2_epoch_end-step2_epoch_start])
             print("step2 epoch time: {:.3f}".format(step2_epoch_end - step2_epoch_start))
