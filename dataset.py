@@ -96,17 +96,16 @@ class CiteseerDataset(GraphDataset):
 
         self.A = torch.zeros(len(self.paper_ids), len(self.paper_ids))
 
-        with open(os.path.join(DATA_PATH, 'cora', 'cora.cites'),
+        with open(os.path.join(DATA_PATH, 'citeseer', 'citeseer.cites'),
                   'r') as citeseer_edge_io:
             while True:
                 try:
                     sample = citeseer_edge_io.readline()
-                    if not sample:
-                        break
-
+                    if not sample: break
+                   
                     cited, citing = sample.split('\t')
-                    cited = self.paper_ids.index(str(cited))
-                    citing = self.paper_ids.index(str(citing))
+                    cited = self.paper_ids.index(str(cited.strip()))
+                    citing = self.paper_ids.index(str(citing.strip()))
                     self.A[cited, citing] = 1
                 except ValueError:
                     pass
