@@ -166,28 +166,28 @@ def edge_prob_method(dataset, **kwargs):
             if epoch % config.log_period == 0:
                 cost = torch.zeros([1]).to(kwargs['device'])
              
-            for doc_id, ref_id in dataset.get_all_edges():
-                prob_edge = edge_prob_model(dataset[doc_id], dataset[ref_id])
-                
-                is_selected = prob_edge.bernoulli()
-                
-                if is_selected == 1:
-                    
-                    j_A = torch.mm(dataset[ref_id].unsqueeze(-1),
-                                   dataset[doc_id].unsqueeze(0))
-                    j_A = torch.mm(edge_prob_model.B.weight.clone(),
-                                   j_A)
-                    
-                    j_B = torch.mm(dataset[ref_id].unsqueeze(-1),
-                                   dataset[doc_id].unsqueeze(0))
-                    j_B = torch.mm(j_B,
-                                   torch.t(edge_prob_model.A.weight.clone()))
-                    
-                    J_A.add_(j_A)
-                    J_B.add_(j_B)
-
-                    if epoch % config.log_period == 0:
-                        cost.sub_(torch.log(prob_edge))                    
+#            for doc_id, ref_id in dataset.get_all_edges():
+#                prob_edge = edge_prob_model(dataset[doc_id], dataset[ref_id])
+#                
+#                is_selected = prob_edge.bernoulli()
+#                
+#                if is_selected == 1:
+#                    
+#                    j_A = torch.mm(dataset[ref_id].unsqueeze(-1),
+#                                   dataset[doc_id].unsqueeze(0))
+#                    j_A = torch.mm(edge_prob_model.B.weight.clone(),
+#                                   j_A)
+#                    
+#                    j_B = torch.mm(dataset[ref_id].unsqueeze(-1),
+#                                   dataset[doc_id].unsqueeze(0))
+#                    j_B = torch.mm(j_B,
+#                                   torch.t(edge_prob_model.A.weight.clone()))
+#                    
+#                    J_A.add_(j_A)
+#                    J_B.add_(j_B)
+#
+#                    if epoch % config.log_period == 0:
+#                        cost.sub_(torch.log(prob_edge))                    
                 
                 print("Update Params edge pair: {:4d}/{:4d}".format(doc_id, len(dataset)), end='\r') 
             
@@ -198,8 +198,9 @@ def edge_prob_method(dataset, **kwargs):
                 
                 if config.sampling == 'bernoulli':
                     is_selected = prob_edges.bernoulli().squeeze()
-                elif config.sampling == 'top100':
-                    is_selected = prob_edges.sort(dim=0)[1][:100].squeeze()
+                elif config.sampling.startswith('top'):
+                    number_of_sample = int(config.sampling.split('top')[-1])
+                    is_selected = prob_edges.sort(dim=0)[1][:number_of_sample].squeeze()
                 else:
                     raise ValueError
                 
@@ -208,9 +209,9 @@ def edge_prob_method(dataset, **kwargs):
         
                 for indices in DataLoader(range(Z_unref.shape[0]),
                                           batch_size=400):
-                    
                     j_A = torch.matmul(z.unsqueeze(-1),
                                        Z_unref[indices].unsqueeze(-2))
+
                     j_A = torch.matmul(edge_prob_model.B.weight,
                                        j_A)
                     j_A = torch.sum(j_A, dim=0)
