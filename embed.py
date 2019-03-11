@@ -58,7 +58,6 @@ def cosine_sim_method(dataset, **kwargs):
 def edge_prob_method(dataset, **kwargs):
     writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
     # torch.set_grad_enabled(False)
-
     if config.model_load is not None:
         edge_prob_model = torch.load(os.path.join(PICKLE_PATH, 'models', 
                     config.model_load))
@@ -72,7 +71,7 @@ def edge_prob_method(dataset, **kwargs):
         dataset.Z = dataset.X.clone()
 
     edge_prob_model = edge_prob_model.cuda(kwargs['device'])
-
+    dataset.Z = dataset.Z.to(kwargs['device'])
     for p in edge_prob_model.parameters(): p.requires_grad = False
     
     while True:
