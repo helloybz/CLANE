@@ -24,8 +24,7 @@ class GraphDataset(Dataset):
         return self.X.shape[0]
 
     def get_all_edges(self):
-        for pair in self.A.nonzero():
-            yield pair
+        return torch.tensor([pair for pair in self.A.nonzero()])
 
     def get_all_non_edges(self):
         for z1, row in enumerate(self.A):
