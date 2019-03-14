@@ -10,6 +10,9 @@ from torch import nn
 from torchvision import models, transforms
 from torchvision.transforms import Normalize
 
+from helper import normalize_elwise
+
+
 TEXT_FILTERS = [lambda x: x.lower(), strip_non_alphanum, strip_numeric,
                 strip_multiple_whitespaces, strip_short]
 
@@ -123,6 +126,7 @@ class EdgeProbability(nn.Module):
         bz = bz.unsqueeze(-1)
         
         output = torch.matmul(az, bz)
+        output = normalize_elwise(output)[0]
         output = torch.sigmoid(output)
         return output
 
