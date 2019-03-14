@@ -108,8 +108,8 @@ def edge_prob_method(dataset, **kwargs):
 
                     dataset.Z[doc_id] = newly_calculated_z
 
-                    print('UpdateZ / {0} / maximum_distance {1:.6f} / \
-                            {2:4d}/{3:4d}'.format(step1_counter, 
+                    print('UpdateZ / {0} / maximum_distance {1:.6f} /' + \
+                            '{2:4d}/{3:4d}'.format(step1_counter, 
                                                   maximum_delta,
                                                   doc_id,
                                                   len(dataset)), end='\r')
@@ -147,16 +147,9 @@ def edge_prob_method(dataset, **kwargs):
             pickle.dump(dataset.Z.clone().cpu().data.numpy(), 
                         open(os.path.join(PICKLE_PATH, 
                                           config.dataset,
-                                          'temp_v_{}_method{}_epoch{}_batch{}_gamma{}_thr{}_{}'.format(
-                                             config.dataset,
-                                             config.method,
-                                             config.epoch,
-                                             config.batch_size,
-                                             config.gamma,
-                                             config.epsilon,
-                                             delta_Z)), 
-                             'wb'))
-            
+                                          'temp_Z_{}'.format(
+                                              config.model_tag)), 'wb'))
+         
         # step 2, "Update W"
         step2_start = time.time()
         for epoch in range(config.epoch):
@@ -164,14 +157,16 @@ def edge_prob_method(dataset, **kwargs):
             cost = 0
             edge_pairs = dataset.A.clone().nonzero()
             nonedge_pairs = (dataset.A==0).nonzero()
-            optimizer = torch.optim.Adam(edge_prob_model.parameters(), lr=config.lr)
+            optimizer = torch.optim.Adam(
+                    edge_prob_model.parameters(), 
+                    lr=config.lr,
+                    )
             
             for idx, pair in enumerate(DataLoader(edge_pairs, 
                         batch_size=config.batch_size)):
                 Z_ = dataset[pair].detach().requires_grad_()
                 
                 edge_probs = edge_prob_model.forward1(Z_).squeeze()
-                                
                 output = torch.sum(-torch.log(edge_probs))
                 
                 edge_prob_model.zero_grad()
