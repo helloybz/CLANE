@@ -116,7 +116,7 @@ def edge_prob_method(dataset, **kwargs):
                     
                 delta_list.append(maximum_delta)
                 
-                if len(delta_list) == 10:
+                if len(delta_list) == 11:
                     delta_list = delta_list[1:]
                 
                 if maximum_delta < config.epsilon:
