@@ -44,7 +44,7 @@ def main(config):
 
     embeddings = (pickle.load(open(target_path, 'rb')) for target_path in target_paths)
     if config.dataset == 'cora':
-        labels = CoraDataset(device=device_).labels
+        labels = CoraDataset(device=device_).labels.numpy()
     else:
         raise ValueError
     
