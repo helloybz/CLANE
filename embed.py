@@ -20,7 +20,7 @@ from models import EdgeProbability
 from settings import PICKLE_PATH
 
 
-def cosine_sim_method(dataset, **kwargs):
+def cosine_sim_method(dataset):
     is_converged = False
     cosine_sim = CosineSimilarity(dim=-1)
     iter_counter = 0
@@ -228,19 +228,33 @@ def main(config):
     
     print('[DATASET] LOADING, {}'.format(config.dataset))
     if config.dataset == 'cora':
-        dataset = CoraDataset(device=device)
+        network = CoraDataset()
     elif config.dataset == 'citeseer':
-        dataset = CiteseerDataset(device=device)
+        network = CiteseerDataset()
     else:
         raise ValueError
     print('[DATASET] LOADED, {}'.format(config.dataset))
-    
-    if config.method == 1:
-        dataset = cosine_sim_method(dataset, device=device)
-    elif config.method == 2:
-        dataset = edge_prob_method(dataset, device=device)
+
+    if config.sim_metric == 'cosine':
+        sim_metric = cosine_sim_method
+    elif config.sim_metric == 'edge_prob':
+        sim_metric = edge_prob_method
     else:
         raise ValueError 
+
+    while True:
+        # Optimize Z
+
+        network = 
+
+        if Z is updated:
+            pass
+        else:
+            break
+
+        # Update Params
+
+
 
     pickle.dump(dataset.Z.cpu().data.numpy(), 
                 open(os.path.join(PICKLE_PATH, 
@@ -258,20 +272,24 @@ def main(config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str)
-    parser.add_argument('--method', type=int, default=1)
+
     parser.add_argument('--gamma', type=float, default=0.9)
     parser.add_argument('--epsilon', type=float, default=0.001)
+
+    parser.add_argument('--sim_metric', type=str)
+
+    parser.add_argument('--sampling', type=str, default='bernoulli')
     parser.add_argument('--epoch', type=int, default=20)
     parser.add_argument('--batch_size', type=int, default=100)
     parser.add_argument('--lr', type=float, default=0.01)
-    parser.add_argument('--gpu', type=int, default=0)
+
     parser.add_argument('--log_period', type=int, default=1)
-    parser.add_argument('--sampling', type=str, default='bernoulli')
+
+    parser.add_argument('--gpu', type=int, default=0)
     import datetime
     model_tag = str(datetime.datetime.today().isoformat('-')).split('.')[0]
     parser.add_argument('--model_tag', type=str, default=model_tag)
     parser.add_argument('--model_load', type=str)
-
     config = parser.parse_args()
     print(config)
     main(config)
