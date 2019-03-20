@@ -35,6 +35,7 @@ def node_classification(embeddings, labels, **kwargs):
     return result
 
 def main(config):
+    pdb.set_trace()
     device_ = device('cpu')
     
     # load target embeddings. 
@@ -44,7 +45,7 @@ def main(config):
 
     embeddings = (pickle.load(open(target_path, 'rb')) for target_path in target_paths)
     if config.dataset == 'cora':
-        labels = CoraDataset(device=device_).labels.numpy()
+        labels = CoraDataset().Y.numpy()
     else:
         raise ValueError
     
@@ -54,7 +55,6 @@ def main(config):
                 embedding = pickle.load(open(target_path, 'rb'))
             except UnicodeDecodeError:
                 embedding = pickle.load(open(target_path, 'rb'), encoding='latin-1')
-
             result = node_classification(embedding, labels, test_size=config.test_size,
                                          name=os.path.basename(target_path)) 
             print(result)

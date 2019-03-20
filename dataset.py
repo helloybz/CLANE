@@ -18,6 +18,27 @@ class GraphDataset(Dataset):
     def __len__(self):
         return self.X.shape[0]
 
+    def x(self, key):
+        return self.G.nodes[key]['x']
+
+    @property
+    def X(self):
+        return torch.stack(list(nx.get_node_attributes(self.G, 'x').values()))
+
+    @property
+    def Z(self):
+        return torch.stack(list(nx.get_node_attributes(self.G, 'z').values()))
+
+    @property
+    def Y(self):
+        labels = nx.get_node_attributes(self.G, 'label').values() 
+        label_set = list(set(labels))
+        labels = [label_set.index(label) for label in labels]
+        return torch.tensor(labels)
+    
+    def z(self, key):
+        return self.G.nodes[key]['z']
+
     def get_all_edges(self):
         return torch.tensor([pair for pair in self.A.nonzero()])
 
@@ -48,7 +69,8 @@ class CoraDataset(GraphDataset):
                     break
 
                 paper_id, *content, label = sample.split('\t')
-                self.G.nodes[paper_id]['x'] = np.array([float(value) for value in content])
+                self.G.nodes[paper_id]['x'] = torch.tensor([float(value) for value in content])
+                self.G.nodes[paper_id]['z'] = self.G.nodes[paper_id]['x'].clone()
                 self.G.nodes[paper_id]['label'] = label.strip()
 
 

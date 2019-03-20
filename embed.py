@@ -5,13 +5,15 @@ import pickle
 import time
 
 import numpy as np
+from networkx.classes.function import neighbors
+from networkx.linalg.attrmatrix import attr_matrix
 from tensorboardX import SummaryWriter
 import torch
 from torch.distributions import Bernoulli
-from torch.nn import CosineSimilarity
 from torch.nn import LogSoftmax
 from torch.nn import NLLLoss
 from torch.nn import BCELoss
+from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from dataset import CoraDataset, CiteseerDataset
@@ -236,7 +238,7 @@ def main(config):
     print('[DATASET] LOADED, {}'.format(config.dataset))
 
     if config.sim_metric == 'cosine':
-        sim_metric = cosine_sim_method
+        sim_metric = F.cosine_similarity
     elif config.sim_metric == 'edge_prob':
         sim_metric = edge_prob_method
     else:
@@ -244,26 +246,31 @@ def main(config):
 
     while True:
         # Optimize Z
+        previous_Z = network.Z.clone()
+        for v in network.G.nodes():
+            nbrs = neighbors(network.G, v)
+            if len(list(nbrs)) == 0:
+                continue
+            nbrs = torch.stack([network.z(u) for u in neighbors(network.G, v)])
+            sims = sim_metric(network.z(v), nbrs, dim=-1) 
+            sims = F.softmax(sims, dim=0)
+            network.G.node[v]['z'] = network.x(v) \
+                                     + config.gamma * torch.mv(nbrs.t(), sims)
+#            network.G.node[v]['z'] = network.z(v).sigmoid()
+            network.G.node[v]['z'] = network.z(v) / torch.norm(network.z(v), 2)
 
-        network = 
-
-        if Z is updated:
-            pass
-        else:
+        distance = torch.norm(network.Z.clone() - previous_Z, 2) 
+        print(distance)
+        if distance < config.epsilon:
             break
-
-        # Update Params
-
-
-
-    pickle.dump(dataset.Z.cpu().data.numpy(), 
+            
+    
+    pickle.dump(network.Z.cpu().data.numpy(), 
                 open(os.path.join(PICKLE_PATH, 
                                   config.dataset,
-                                  'v_{}_method{}_epoch{}_batch{}_gamma{}_thr{}'.format(
+                                  'Z_{}_{}_gamma{}_thr{}'.format(
                                      config.dataset,
-                                     config.method,
-                                     config.epoch,
-                                     config.batch_size,
+                                     config.sim_metric,
                                      config.gamma,
                                      config.epsilon)), 
                      'wb'))
@@ -274,14 +281,9 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str)
 
     parser.add_argument('--gamma', type=float, default=0.9)
-    parser.add_argument('--epsilon', type=float, default=0.001)
+    parser.add_argument('--epsilon', type=float, default=0.0001)
 
     parser.add_argument('--sim_metric', type=str)
-
-    parser.add_argument('--sampling', type=str, default='bernoulli')
-    parser.add_argument('--epoch', type=int, default=20)
-    parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--lr', type=float, default=0.01)
 
     parser.add_argument('--log_period', type=int, default=1)
 
