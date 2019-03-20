@@ -31,7 +31,7 @@ class EdgeProbability(nn.Module):
         output = torch.sigmoid(output)
         return output
 
-    def forward(self, Z_srcs, Z_dests):
+    def forward(self, Z_srcs, Z_dests, **kwargs):
         # Z_srcs : (B x d)
         # Z_dests: (B x |N| x d)
         # Output : (B)
@@ -44,8 +44,10 @@ class EdgeProbability(nn.Module):
         if output.dim() == 0: output.unsqueeze_(0)
         return torch.sigmoid(output) 
  
-    def get_similarities(self, Z_srcs, Z_dests):
-        probs = self.forward(Z_srcs.unsqueeze(0), Z_dests)
-        softmax_probs = self.softmax(probs)
-        return self.softmax(probs)
+    def get_similarities(self, Z_srcs, Z_dests, **kwargs):
+        if Z_srcs.dim() == 1:
+            Z_srcs = Z_srcs.unsqueeze(0)
+        if Z_dests.dim() == 2:
+            Z_dests = Z_dests.unsqueeze(0)
 
+        return self.forward(Z_srcs, Z_dests)

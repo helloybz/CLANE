@@ -16,11 +16,13 @@ class GraphDataset(Dataset):
         return self.Z[index]
 
     def __len__(self):
-        return self.X.shape[0]
+        return nx.number_of_nodes(self.G)
 
     def x(self, key):
         return self.G.nodes[key]['x']
-
+    
+    def z(self, key):
+        return self.G.nodes[key]['z']
     @property
     def X(self):
         return torch.stack(list(nx.get_node_attributes(self.G, 'x').values()))
@@ -35,16 +37,13 @@ class GraphDataset(Dataset):
         label_set = list(set(labels))
         labels = [label_set.index(label) for label in labels]
         return torch.tensor(labels)
-    
+   
+    @property
+    def feature_size(self):
+        return self.Z.shape[-1]
+
     def z(self, key):
         return self.G.nodes[key]['z']
-
-    def get_all_edges(self):
-        return torch.tensor([pair for pair in self.A.nonzero()])
-
-    def get_all_non_edges(self):
-        for z1, row in enumerate(self.A):
-            yield z1, (row == 0).nonzero()
 
 
 class CoraDataset(GraphDataset):

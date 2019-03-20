@@ -20,44 +20,6 @@ from dataset import CoraDataset, CiteseerDataset
 from helper import  normalize_elwise
 from models import EdgeProbability
 from settings import PICKLE_PATH
-
-
-def cosine_sim_method(dataset):
-    is_converged = False
-    cosine_sim = CosineSimilarity(dim=-1)
-    iter_counter = 0
-    dataset.Z = dataset.X.clone()
-
-    while not is_converged:
-        iter_counter += 1
-        maximum_delta = -np.inf
-        
-        for doc_id in range(len(dataset)):
-            z = dataset[doc_id]
-            ref_indices = dataset.A[doc_id].nonzero().squeeze()
-            Z_ref = dataset[ref_indices]
-            if Z_ref.dim() == 1 : Z_ref.unsqueeze_(0)
-            
-            messages = torch.mv(Z_ref.t(), 
-                                torch.nn.functional.softmax(
-                                    (1+cosine_sim(z, Z_ref))/2,
-                                    dim=0))
-            newly_calculated_z = dataset.X[doc_id] + config.gamma * messages
-            delta = torch.norm(newly_calculated_z - z, 2)
-            if delta > 100: pdb.set_trace()
-            maximum_delta = max(maximum_delta, delta)
-            dataset.Z[doc_id] = newly_calculated_z
-            
-            print('UpdateZ / {0} / maximum_distance {1:.6f} / {2:4d}/{3:4d}'\
-                  .format(iter_counter, 
-                          maximum_delta, 
-                          doc_id, len(dataset)),
-                  end='\r')
-
-        if maximum_delta < config.epsilon:
-            is_converged = True
-    
-    return dataset
            
 
 def edge_prob_method(dataset, **kwargs):
@@ -240,31 +202,49 @@ def main(config):
     if config.sim_metric == 'cosine':
         sim_metric = F.cosine_similarity
     elif config.sim_metric == 'edge_prob':
-        sim_metric = edge_prob_method
+        edge_prob_model = EdgeProbability(dim=network.feature_size)
+        sim_metric = edge_prob_model.get_similarities
     else:
         raise ValueError 
+   
+    with torch.no_grad():
+        while True:
+            # Optimize Z
+            previous_Z = network.Z.clone()
+            for v in network.G.nodes():
+                nbrs = neighbors(network.G, v)
+                if len(list(nbrs)) == 0:
+                    continue
+                nbrs = torch.stack([network.z(u) for u in neighbors(network.G, v)])
+                sims = sim_metric(network.z(v), nbrs, dim=-1) 
+                sims = F.softmax(sims, dim=0)
+                network.G.node[v]['z'] = network.x(v) \
+                                         + config.gamma * torch.mv(nbrs.t(), sims)
+                network.G.node[v]['z'] = network.z(v) / torch.norm(network.z(v), 2)
 
-    while True:
-        # Optimize Z
-        previous_Z = network.Z.clone()
-        for v in network.G.nodes():
-            nbrs = neighbors(network.G, v)
-            if len(list(nbrs)) == 0:
-                continue
-            nbrs = torch.stack([network.z(u) for u in neighbors(network.G, v)])
-            sims = sim_metric(network.z(v), nbrs, dim=-1) 
-            sims = F.softmax(sims, dim=0)
-            network.G.node[v]['z'] = network.x(v) \
-                                     + config.gamma * torch.mv(nbrs.t(), sims)
-#            network.G.node[v]['z'] = network.z(v).sigmoid()
-            network.G.node[v]['z'] = network.z(v) / torch.norm(network.z(v), 2)
+            distance = torch.norm(network.Z.clone() - previous_Z, 2) 
+            print(distance)
+            if distance < config.epsilon:
+                break
 
-        distance = torch.norm(network.Z.clone() - previous_Z, 2) 
-        print(distance)
-        if distance < config.epsilon:
-            break
             
-    
+    pdb.set_trace()
+    for v in network.G.nodes():
+        nbrs = neighbors(network.G, v)
+        nbrs = torch.stack([network.z(u) for u in nbrs])
+        
+        probs = edge_prob_model(network.z(v).unsqueeze(0), nbrs.unsqueeze(0))
+        loss_edge = torch.sum(-torch.log(probs))
+
+        # Negative sampling
+        negative_samples = 
+
+        # Calculate loss for negative samples
+
+        # Backprop & update
+
+        print(v)
+    pdb.set_trace()
     pickle.dump(network.Z.cpu().data.numpy(), 
                 open(os.path.join(PICKLE_PATH, 
                                   config.dataset,
