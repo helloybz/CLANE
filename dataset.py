@@ -45,9 +45,23 @@ class GraphDataset(Dataset):
     def z(self, key):
         return self.G.nodes[key]['z']
 
+    def save(self, config):
+        import pickle, os
+        from settings import PICKLE_PATH
+        io = open(os.path.join(PICKLE_PATH, config.dataset, config.model_tag), 'wb')
+        pickle.dump(self.Z.cpu().data.numpy(), io)
+
+    def load(self, config):
+        import pickle, os
+        from settings import PICKLE_PATH
+        import torch
+        io = open(os.path.join(PICKLE_PATH, config.dataset, config.model_tag), 'rb')
+        loaded_Z = pickle.load(io)
+        for idx, v in enumerate(self.G.nodes()):
+            self.G.nodes()[v]['z'] = torch.tensor(loaded_Z[idx]).to(torch.device('cuda:{}'.format(config.gpu)))
 
 class CoraDataset(GraphDataset):
-    def __init__(self):
+    def __init__(self, **kwargs):
         super(CoraDataset, self).__init__()
 
         with open(os.path.join(DATA_PATH, 'cora', 'cora.cites'),
@@ -68,8 +82,8 @@ class CoraDataset(GraphDataset):
                     break
 
                 paper_id, *content, label = sample.split('\t')
-                self.G.nodes[paper_id]['x'] = torch.tensor([float(value) for value in content])
-                self.G.nodes[paper_id]['z'] = self.G.nodes[paper_id]['x'].clone()
+                self.G.nodes[paper_id]['x'] = torch.tensor([float(value) for value in content]).to(kwargs['device'])
+                self.G.nodes[paper_id]['z'] = self.G.nodes[paper_id]['x'].clone().to(kwargs['device'])
                 self.G.nodes[paper_id]['label'] = label.strip()
 
 

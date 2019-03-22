@@ -42,10 +42,10 @@ def main(config):
     target_paths = glob.glob(os.path.join(DATA_PATH, 
                                           'experiments', 'target',
                                           config.experiment, '*'))
-
+    
     embeddings = (pickle.load(open(target_path, 'rb')) for target_path in target_paths)
     if config.dataset == 'cora':
-        labels = CoraDataset().Y.numpy()
+        labels = CoraDataset(device=device_).Y.numpy()
     else:
         raise ValueError
     
@@ -57,7 +57,12 @@ def main(config):
                 embedding = pickle.load(open(target_path, 'rb'), encoding='latin-1')
             result = node_classification(embedding, labels, test_size=config.test_size,
                                          name=os.path.basename(target_path)) 
-            print(result)
+            print('===========================')
+            for key in result.keys():
+                if key == 'embedding':
+                    print(result[key])
+                else:
+                    print(key, '\t', '{:4f}'.format(result[key]))
     else:
         raise ValueError
 
