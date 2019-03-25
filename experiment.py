@@ -20,22 +20,78 @@ def node_classification(embeddings, labels, **kwargs):
     train_X, test_X, train_Y, test_Y = train_test_split(
         embeddings, labels, test_size=kwargs['test_size'], random_state=0)
     
-    classifier = OneVsRestClassifier(LogisticRegression(
-        random_state=0, solver='lbfgs', multi_class='multinomial', max_iter=300))
+    if config.clf == 'nn':
+        import torch
+        from torch import tensor
+        from torch.nn import CrossEntropyLoss
+        from torch.nn import Linear
+        from torch.nn import Module
+        from torch.nn.functional import relu
+        from torch.optim import SGD
+        from torch.utils.data import DataLoader, Dataset
 
-    classifier.fit(train_X, train_Y)
-    score = classifier.score(test_X, test_Y)
-    pred = classifier.predict(test_X)
+        in_feature = train_X.shape[1]
+        number_of_classes = len(set(test_Y))
+        device_ = device('cuda:0')
+
+        one_hot_train_Y = torch.zeros(len(train_Y), number_of_classes).to(device_)
+        for idx, label in enumerate(train_Y):
+            one_hot_train_Y[idx][label] = 1
+        
+        class TrainSet(Dataset):
+            def __init__(self):
+                super(TrainSet, self).__init__()
+                self.train_X = torch.tensor(train_X).to(device_)
+                self.train_Y = torch.tensor(train_Y).long().to(device_)
+
+            def __getitem__(self, idx):
+                return self.train_X[idx], self.train_Y[idx]
+
+            def __len__(self):
+                return self.train_X.shape[0]
+
+        class NeuralNet(Module):
+            def __init__(self):
+                super(NeuralNet, self).__init__()
+                self.fc1 = Linear(in_feature, 500)
+                self.fc2 = Linear(500, 100)
+                self.fc3 = Linear(100, number_of_classes)
+                
+            def forward(self, x):
+                x = relu(self.fc1(x))
+                x = relu(self.fc2(x))
+                x = self.fc3(x)
+                return x
+
+        clf = NeuralNet().to(device_)
+        criterion = CrossEntropyLoss()
+        optimizer = SGD(clf.parameters(), lr=0.001, momentum=0.9)
+
+        for epoch in range(10):
+            for x, y in DataLoader(TrainSet(), shuffle=True):
+               optimizer.zero_grad()
+               output = clf(x)
+               loss = criterion(output, y)
+               loss.backward()
+               optimizer.step()
+
+        with torch.no_grad():
+            pred = torch.max(clf(torch.tensor(test_X).to(device_)), 1)[-1].cpu()
+
+    elif config.clf == 'lr':
+        clf = OneVsRestClassifier(
+                LogisticRegression(random_state=0, solver='lbfgs', 
+                                   multi_class='multinomial', max_iter=300))
+        clf.fit(train_X, train_Y)
+        pred = clf.predict(test_X)
 
     result = dict()
     result['embedding'] = kwargs['name']
     result['micro_f1'] = f1_score(pred, test_Y, average='micro')
     result['macro_f1'] = f1_score(pred, test_Y, average='macro')
-    result['mean_accuracy'] = classifier.score(test_X, test_Y)
     return result
 
 def main(config):
-    pdb.set_trace()
     device_ = device('cpu')
     
     # load target embeddings. 
@@ -73,7 +129,8 @@ if __name__ == "__main__":
     parser.add_argument('--experiment', type=str, default='node_classification')
     parser.add_argument('--dataset', type=str, default='cora')
     parser.add_argument('--test_size', type=float, default='0.4')
-    
+   
+    parser.add_argument('--clf', type=str, default='nn')
     config = parser.parse_args()
     print(config)
     main(config)
