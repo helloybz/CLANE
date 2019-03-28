@@ -4,6 +4,7 @@ import os
 import pdb
 import pickle
 
+import networkx as nx 
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.multiclass import OneVsRestClassifier
@@ -14,6 +15,7 @@ from dataset import CoraDataset
 from settings import DATA_PATH
 from settings import PICKLE_PATH
 
+DATASET_MAP = {'cora':CoraDataset}
 
 def node_classification(embeddings, labels, **kwargs):
     # split dataset
@@ -67,7 +69,7 @@ def node_classification(embeddings, labels, **kwargs):
         criterion = CrossEntropyLoss()
         optimizer = SGD(clf.parameters(), lr=0.001, momentum=0.9)
 
-        for epoch in range(10):
+        for epoch in range(100):
             for x, y in DataLoader(TrainSet(), shuffle=True):
                optimizer.zero_grad()
                output = clf(x)
@@ -91,26 +93,77 @@ def node_classification(embeddings, labels, **kwargs):
     result['macro_f1'] = f1_score(pred, test_Y, average='macro')
     return result
 
+def link_prediction(network, **kwargs):
+    # TODO: Split train/test
+    from random import sample
+    network_copy = network.G.copy()
+    test_split = list()
+    for node in network.G.nodes():
+        if network.G.in_degree(node) > 1:
+            sampled_edge = sample(list(network.G.in_edges(node)), k=1)[0]
+            network_copy.remove_edge(*sampled_edge)
+            if list(nx.isolates(network_copy)):
+                network_copy.add_edge(*sampled_edge)
+            else:
+                test_split.append(sampled_edge)
+    print(list(nx.isolates(network_copy)))
+    pdb.set_trace() 
+    negative_pairs = sample(list(nx.non_edges(network.G), k=len(test_split)))
+
+    class TrainSet(Dataset):
+        def __init__(self, network):
+            super(TrainSet, self).__init__()
+            self.network = network
+
+    dataset = TrainSet(network_copy)
+    if 'edge_prob' in kwargs['model_tag']:
+        # model load
+        pass
+    else:
+        # init a nn
+        class NeuralNet(Module):
+            def __init__(self, in_feature, number_of_classes):
+                super(NeuralNet, self).__init__()
+                self.fc1 = Linear(in_feature, 500)
+                self.fc2 = Linear(500, 100)
+                self.fc3 = Linear(100, number_of_classes)
+                
+            def forward(self, x):
+                x = relu(self.fc1(x))
+                x = relu(self.fc2(x))
+                x = self.fc3(x)
+                return x
+
+        clf = NeuralNet()
+        # train nn
+
+
+    
+    
+    # TODO: Balance test split
+    # TODO: Train classifier
+    # TODO: Test
+
+    result = dict()
+    result['embedding'] = kwargs['name']
+    return result
+
 def main(config):
-    device_ = device('cpu')
+    device_ = device('cuda')
     
     # load target embeddings. 
     target_paths = glob.glob(os.path.join(DATA_PATH, 
                                           'experiments', 'target',
                                           config.experiment, '*'))
-    
-    embeddings = (pickle.load(open(target_path, 'rb')) for target_path in target_paths)
-    if config.dataset == 'cora':
-        labels = CoraDataset(device=device_).Y.numpy()
-    else:
-        raise ValueError
-    
+
     if config.experiment == 'node_classification':
         for target_path in target_paths:
+            labels = DATASET_MAP[os.path.basename(target_path).split('_')[0]](device=device_).Y.numpy()
             try:
                 embedding = pickle.load(open(target_path, 'rb'))
             except UnicodeDecodeError:
                 embedding = pickle.load(open(target_path, 'rb'), encoding='latin-1')
+
             result = node_classification(embedding, labels, test_size=config.test_size,
                                          name=os.path.basename(target_path)) 
             print('===========================')
@@ -119,6 +172,24 @@ def main(config):
                     print(result[key])
                 else:
                     print(key, '\t', '{:4f}'.format(result[key]))
+    elif config.experiment == 'link_prediction':
+        for target_path in target_paths:
+            embedding = pickle.load(open(target_path, 'rb'))
+            model_tag = os.path.basename(target_path)
+            network = DATASET_MAP[model_tag.split('_')[0]](device=device_)
+            for z, node in zip(embedding,network.G):
+                network.G.nodes()[node]['z'] = z
+
+            result = link_prediction(network, model_tag=model_tag)
+       
+        for result in results:
+            print('===========================')
+            for key in result.keys():
+                if key == 'embedding':
+                    print(result[key])
+                else:
+                    print(key, '\t', '{:4f}'.format(result[key]))
+
     else:
         raise ValueError
 
