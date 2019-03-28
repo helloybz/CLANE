@@ -196,12 +196,12 @@ def main(config):
     
     print('[DATASET] LOADING, {}'.format(config.dataset))
     if config.dataset == 'cora':
-        network = CoraDataset(device=device)
+        network = CoraDataset(sampled=config.sampled, device=device)
         if config.model_load is not None:
             network.load(config)
             
     elif config.dataset == 'citeseer':
-        network = CiteseerDataset()
+        network = CiteseerDataset(sampled=config.sampled, divce=device)
     else:
         raise ValueError
     print('[DATASET] LOADED, {}'.format(config.dataset))
@@ -209,6 +209,7 @@ def main(config):
     print('[MODEL] LOADING')
     if config.sim_metric == 'cosine':
         sim_metric = F.cosine_similarity
+        iter_counter = 0
     elif config.sim_metric == 'edge_prob':
         if config.model_load is not None:
             edge_prob_model = torch.load(os.path.join(PICKLE_PATH, 'models', 
@@ -263,56 +264,56 @@ def main(config):
                     break
        
         if flag_done: break
+        if config.sim_metric == 'edge_prob':
+            # Update params
+            optimizer = torch.optim.Adam(
+                    edge_prob_model.parameters(), 
+                    lr=config.lr,
+                    )
+            for epoch in range(config.epoch):
+                cost = 0
+                for node_idx, v in enumerate(network.G.nodes()):
+                    optimizer.zero_grad()
+                    edge_prob_model.zero_grad()
+                    nbrs = neighbors(network.G, v)
+                    nbrs = list(nbrs)
+                    if len(nbrs) != 0:
+                        nbrs = torch.stack([network.z(u) for u in nbrs])
+                        probs = edge_prob_model(network.z(v).unsqueeze(0), nbrs.unsqueeze(0))
+                        loss_edge = torch.sum(-torch.log(probs))
+                    else:
+                        loss_edge = 0
 
-        # Update params
-        optimizer = torch.optim.Adam(
-                edge_prob_model.parameters(), 
-                lr=config.lr,
-                )
-        for epoch in range(config.epoch):
-            cost = 0
-            for node_idx, v in enumerate(network.G.nodes()):
-                optimizer.zero_grad()
-                edge_prob_model.zero_grad()
-                nbrs = neighbors(network.G, v)
-                nbrs = list(nbrs)
-                if len(nbrs) != 0:
-                    nbrs = torch.stack([network.z(u) for u in nbrs])
-                    probs = edge_prob_model(network.z(v).unsqueeze(0), nbrs.unsqueeze(0))
-                    loss_edge = torch.sum(-torch.log(probs))
-                else:
-                    loss_edge = 0
+                    neg_nbrs = torch.stack([network.z(u) 
+                            for u in list(non_neighbors(network.G, v))])
+                    probs = edge_prob_model(network.z(v).unsqueeze(0), neg_nbrs.unsqueeze(0))
+                    neg_probs = 1-probs
+                    neg_probs = neg_probs[(1-probs).clone().detach().bernoulli().byte()]
+                    loss_non_edge = torch.sum(-torch.log(neg_probs))
 
-                neg_nbrs = torch.stack([network.z(u) 
-                        for u in list(non_neighbors(network.G, v))])
-                probs = edge_prob_model(network.z(v).unsqueeze(0), neg_nbrs.unsqueeze(0))
-                neg_probs = 1-probs
-                neg_probs = neg_probs[(1-probs).clone().detach().bernoulli().byte()]
-                loss_non_edge = torch.sum(-torch.log(neg_probs))
+                    # Backprop & update
+                    loss = loss_edge + loss_non_edge
+                    cost += loss.data
+                    loss.backward()
+                    optimizer.step()
+                    print('Update Params | {} | Cost: {}'.format(epoch, cost), end='\r')
+                    if node_idx == len(network)-1:
+                        print('Update Params | {} | Cost: {}'.format(epoch, cost))
 
-                # Backprop & update
-                loss = loss_edge + loss_non_edge
-                cost += loss.data
-                loss.backward()
-                optimizer.step()
-                print('Update Params | {} | Cost: {}'.format(epoch, cost), end='\r')
-                if node_idx == len(network)-1:
-                    print('Update Params | {} | Cost: {}'.format(epoch, cost))
-
-            writer.add_scalar('{}/cost'.format(config.model_tag), 
-                              cost, 
-                              iter_counter*config.epoch + epoch)
+                writer.add_scalar('{}/cost'.format(config.model_tag), 
+                                  cost, 
+                                  iter_counter*config.epoch + epoch)
         
+
+            torch.save(edge_prob_model,os.path.join(
+                        PICKLE_PATH, 'models', config.model_tag))
+            checkpoint = {
+                'iter_counter': iter_counter,
+            }
+            torch.save(checkpoint, os.path.join(
+                        PICKLE_PATH, 'checkpoints', config.model_tag))
+
         network.save(config)
-
-        torch.save(edge_prob_model,os.path.join(
-                    PICKLE_PATH, 'models', config.model_tag))
-        checkpoint = {
-            'iter_counter': iter_counter,
-        }
-        torch.save(checkpoint, os.path.join(
-                    PICKLE_PATH, 'checkpoints', config.model_tag))
-
     pickle.dump(network.Z.cpu().data.numpy(), 
                 open(os.path.join(PICKLE_PATH, 
                                   config.dataset,
@@ -327,6 +328,7 @@ def main(config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str)
+    parser.add_argument('--sampled', action='store_true')
 
     parser.add_argument('--gamma', type=float, default=0.9)
     parser.add_argument('--epsilon', type=float, default=0.0001)
