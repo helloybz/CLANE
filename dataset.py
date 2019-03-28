@@ -9,9 +9,41 @@ from settings import DATA_PATH
 
 
 class GraphDataset(Dataset):
-    def __init__(self):
+    def __init__(self, dataset, sampled, **kwargs):
         self.G = nx.DiGraph()
 
+        with open(os.path.join(DATA_PATH, dataset,'{}.cites'.format(dataset)),
+                  'r') as edge_io:
+            while True:
+                line = edge_io.readline()
+                if not line:
+                    break
+
+                target, source = line.split('\t')
+                self.G.add_edge(source.strip(), target.strip())
+
+        with open(os.path.join(DATA_PATH, dataset, '{}.content'.format(dataset)),
+                  'r') as content_io:
+            while True:
+                line = content_io.readline()
+                if not line:
+                    break
+
+                id_, *content, label = line.split('\t')
+                self.G.nodes[id_]['x'] = torch.tensor([float(value) for value in content]).to(kwargs['device'])
+                self.G.nodes[id_]['z'] = self.G.nodes[id_]['x'].clone().to(kwargs['device'])
+                self.G.nodes[id_]['label'] = label.strip()
+
+        if sampled:
+            from random import sample
+            for node in self.G.nodes():
+                if self.G.in_degree(node) > 1:
+                    chosen_edge = sample(list(self.G.in_edges(node)), k=1)[0]
+                    self.G.remove_edge(*chosen_edge)
+                    if list(nx.isolates(self.G)):
+                        self.G.add_edge(*chosen_edge)
+    
+             
     def __getitem__(self, index):
         return self.Z[index]
 
@@ -50,6 +82,7 @@ class GraphDataset(Dataset):
         from settings import PICKLE_PATH
         io = open(os.path.join(PICKLE_PATH, config.dataset, config.model_tag), 'wb')
         pickle.dump(self.Z.cpu().data.numpy(), io)
+        io.close()
 
     def load(self, config):
         import pickle, os
@@ -59,58 +92,20 @@ class GraphDataset(Dataset):
         loaded_Z = pickle.load(io)
         for idx, v in enumerate(self.G.nodes()):
             self.G.nodes()[v]['z'] = torch.tensor(loaded_Z[idx]).to(torch.device('cuda:{}'.format(config.gpu)))
+        io.close()
 
 class CoraDataset(GraphDataset):
-    def __init__(self, **kwargs):
-        super(CoraDataset, self).__init__()
-
-        with open(os.path.join(DATA_PATH, 'cora', 'cora.cites'),
-                  'r') as cora_edge_io:
-            while True:
-                sample = cora_edge_io.readline()
-                if not sample:
-                    break
-
-                cited, citing = sample.split('\t')
-                self.G.add_edge(citing.strip(), cited.strip())
-
-        with open(os.path.join(DATA_PATH, 'cora', 'cora.content'),
-                  'r') as cora_content_io:
-            while True:
-                sample = cora_content_io.readline()
-                if not sample:
-                    break
-
-                paper_id, *content, label = sample.split('\t')
-                self.G.nodes[paper_id]['x'] = torch.tensor([float(value) for value in content]).to(kwargs['device'])
-                self.G.nodes[paper_id]['z'] = self.G.nodes[paper_id]['x'].clone().to(kwargs['device'])
-                self.G.nodes[paper_id]['label'] = label.strip()
-
+    def __init__(self, sampled=False, **kwargs):
+        super(CoraDataset, self).__init__('cora', sampled, **kwargs)
 
 class CiteseerDataset(GraphDataset):
-    def __init__(self, **kwargs):
-        super(CiteseerDataset, self).__init__(**kwargs)
+    def __init__(self, sampled=False, **kwargs):
+        super(CiteseerDataset, self).__init__('citeseer', sampled, **kwargs)
 
-        with open(os.path.join(DATA_PATH, 'citeseer', 'citeseer.cites'),
-                  'r') as citeseer_edge_io:
-            while True:
-                sample = citeseer_edge_io.readline()
-                if not sample:
-                    break
-
-                cited, citing = sample.split('\t')
-                self.G.add_edge(citing.strip(), cited.strip())
-
-        with open(os.path.join(DATA_PATH, 'citeseer', 'citeseer.content'),
-                  'r') as citseer_content_io:
-            while True:
-                sample = citseer_content_io.readline()
-                if not sample:
-                    break
-
-                paper_id, *content, label = sample.split('\t')
-                self.G.nodes[paper_id]['x'] = np.array([float(value) for value in content])
-                self.G.nodes[paper_id]['label'] = label.strip()
 
 if __name__ == "__main__":
-    dataset = CoraDataset()
+    import torch
+    import pdb
+
+    dataset = CoraDataset(sampled=True, device=torch.device('cuda'))
+    pdb.set_trace()
