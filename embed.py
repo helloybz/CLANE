@@ -5,57 +5,23 @@ import pickle
 import time
 
 import numpy as np
+from numpy.random import choice
+from networkx.classes.function import neighbors
+from networkx.classes.function import non_neighbors
+from networkx.linalg.attrmatrix import attr_matrix
 from tensorboardX import SummaryWriter
 import torch
 from torch.distributions import Bernoulli
-from torch.nn import CosineSimilarity
 from torch.nn import LogSoftmax
 from torch.nn import NLLLoss
 from torch.nn import BCELoss
+from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from dataset import CoraDataset, CiteseerDataset
 from helper import  normalize_elwise
 from models import EdgeProbability
 from settings import PICKLE_PATH
-
-
-def cosine_sim_method(dataset, **kwargs):
-    is_converged = False
-    cosine_sim = CosineSimilarity(dim=-1)
-    iter_counter = 0
-    dataset.Z = dataset.X.clone()
-
-    while not is_converged:
-        iter_counter += 1
-        maximum_delta = -np.inf
-        
-        for doc_id in range(len(dataset)):
-            z = dataset[doc_id]
-            ref_indices = dataset.A[doc_id].nonzero().squeeze()
-            Z_ref = dataset[ref_indices]
-            if Z_ref.dim() == 1 : Z_ref.unsqueeze_(0)
-            
-            messages = torch.mv(Z_ref.t(), 
-                                torch.nn.functional.softmax(
-                                    (1+cosine_sim(z, Z_ref))/2,
-                                    dim=0))
-            newly_calculated_z = dataset.X[doc_id] + config.gamma * messages
-            delta = torch.norm(newly_calculated_z - z, 2)
-            if delta > 100: pdb.set_trace()
-            maximum_delta = max(maximum_delta, delta)
-            dataset.Z[doc_id] = newly_calculated_z
-            
-            print('UpdateZ / {0} / maximum_distance {1:.6f} / {2:4d}/{3:4d}'\
-                  .format(iter_counter, 
-                          maximum_delta, 
-                          doc_id, len(dataset)),
-                  end='\r')
-
-        if maximum_delta < config.epsilon:
-            is_converged = True
-    
-    return dataset
            
 
 def edge_prob_method(dataset, **kwargs):
@@ -108,8 +74,8 @@ def edge_prob_method(dataset, **kwargs):
 
                     dataset.Z[doc_id] = newly_calculated_z
 
-                    print('UpdateZ / {0} / maximum_distance {1:.6f} / \
-                            {2:4d}/{3:4d}'.format(step1_counter, 
+                    print('UpdateZ / {0} / maximum_distance {1:.6f} /' + \
+                            '{2:4d}/{3:4d}'.format(step1_counter, 
                                                   maximum_delta,
                                                   doc_id,
                                                   len(dataset)), end='\r')
@@ -147,16 +113,9 @@ def edge_prob_method(dataset, **kwargs):
             pickle.dump(dataset.Z.clone().cpu().data.numpy(), 
                         open(os.path.join(PICKLE_PATH, 
                                           config.dataset,
-                                          'temp_v_{}_method{}_epoch{}_batch{}_gamma{}_thr{}_{}'.format(
-                                             config.dataset,
-                                             config.method,
-                                             config.epoch,
-                                             config.batch_size,
-                                             config.gamma,
-                                             config.epsilon,
-                                             delta_Z)), 
-                             'wb'))
-            
+                                          'temp_Z_{}'.format(
+                                              config.model_tag)), 'wb'))
+         
         # step 2, "Update W"
         step2_start = time.time()
         for epoch in range(config.epoch):
@@ -164,14 +123,16 @@ def edge_prob_method(dataset, **kwargs):
             cost = 0
             edge_pairs = dataset.A.clone().nonzero()
             nonedge_pairs = (dataset.A==0).nonzero()
-            optimizer = torch.optim.Adam(edge_prob_model.parameters(), lr=config.lr)
+            optimizer = torch.optim.Adam(
+                    edge_prob_model.parameters(), 
+                    lr=config.lr,
+                    )
             
             for idx, pair in enumerate(DataLoader(edge_pairs, 
                         batch_size=config.batch_size)):
                 Z_ = dataset[pair].detach().requires_grad_()
                 
                 edge_probs = edge_prob_model.forward1(Z_).squeeze()
-                                
                 output = torch.sum(-torch.log(edge_probs))
                 
                 edge_prob_model.zero_grad()
@@ -225,6 +186,8 @@ def edge_prob_method(dataset, **kwargs):
 
 
 def main(config):
+    writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
+    
     if torch.cuda.is_available():
         device = torch.device('cuda:{}'.format(config.gpu))
     else:
@@ -233,28 +196,129 @@ def main(config):
     
     print('[DATASET] LOADING, {}'.format(config.dataset))
     if config.dataset == 'cora':
-        dataset = CoraDataset(device=device)
+        network = CoraDataset(device=device)
+        if config.model_load is not None:
+            network.load(config)
+            
     elif config.dataset == 'citeseer':
-        dataset = CiteseerDataset(device=device)
+        network = CiteseerDataset()
     else:
         raise ValueError
     print('[DATASET] LOADED, {}'.format(config.dataset))
-    
-    if config.method == 1:
-        dataset = cosine_sim_method(dataset, device=device)
-    elif config.method == 2:
-        dataset = edge_prob_method(dataset, device=device)
-    else:
-        raise ValueError 
 
-    pickle.dump(dataset.Z.cpu().data.numpy(), 
+    print('[MODEL] LOADING')
+    if config.sim_metric == 'cosine':
+        sim_metric = F.cosine_similarity
+    elif config.sim_metric == 'edge_prob':
+        if config.model_load is not None:
+            edge_prob_model = torch.load(os.path.join(PICKLE_PATH, 'models', 
+                        config.model_load))
+            checkpoint = torch.load(os.path.join(PICKLE_PATH, 'checkpoints',
+                        config.model_load))
+            iter_counter = checkpoint['iter_counter']-1
+        else:
+            edge_prob_model = EdgeProbability(dim=network.feature_size).to(device)
+            iter_counter = 0
+
+        sim_metric = edge_prob_model.get_similarities
+    else:
+        raise ValueError
+    print('[MODEL] LOADED')
+
+    flag_done = False
+    while True:
+        iter_counter += 1
+        # Optimize Z
+        print('===================================')
+        with torch.no_grad():
+            iter_counter_optZ = 0
+            distance_history = []
+            while True:
+                iter_counter_optZ += 1
+                previous_Z = network.Z.clone()
+                for v in network.G.nodes():
+                    nbrs = neighbors(network.G, v)
+                    if len(list(nbrs)) == 0:
+                        continue
+                    nbrs = torch.stack([network.z(u) for u in neighbors(network.G, v)])
+                    sims = sim_metric(network.z(v), nbrs, dim=-1) 
+                    sims = F.softmax(sims, dim=0)
+                    network.G.node[v]['z'] = network.x(v) \
+                                             + config.gamma * torch.mv(nbrs.t(), sims)
+                    network.G.node[v]['z'] = network.z(v) / torch.norm(network.z(v), 2)
+
+                distance = torch.norm(network.Z.clone() - previous_Z, 2)
+                distance_history.append(distance.item())
+                flag_done = (distance==0)
+                print('Optimize Z | {:4d} | distance: {:10f}'.format(
+                            iter_counter_optZ, distance), end='\r')
+                if (distance < config.epsilon or
+                        (len(set(distance_history[-10:])) == 1 and 
+                         len(distance_history)>10)):
+                    writer.add_scalar('{}/distance'.format(config.model_tag), 
+                            distance.item(), iter_counter)
+                    network.save(config)
+                    print('Optimize Z | {:4d} | distance: {:10f}'.format(
+                                iter_counter_optZ, distance))
+                    break
+       
+        if flag_done: break
+
+        # Update params
+        optimizer = torch.optim.Adam(
+                edge_prob_model.parameters(), 
+                lr=config.lr,
+                )
+        for epoch in range(config.epoch):
+            cost = 0
+            for node_idx, v in enumerate(network.G.nodes()):
+                optimizer.zero_grad()
+                edge_prob_model.zero_grad()
+                nbrs = neighbors(network.G, v)
+                nbrs = list(nbrs)
+                if len(nbrs) != 0:
+                    nbrs = torch.stack([network.z(u) for u in nbrs])
+                    probs = edge_prob_model(network.z(v).unsqueeze(0), nbrs.unsqueeze(0))
+                    loss_edge = torch.sum(-torch.log(probs))
+                else:
+                    loss_edge = 0
+
+                neg_nbrs = torch.stack([network.z(u) 
+                        for u in list(non_neighbors(network.G, v))])
+                probs = edge_prob_model(network.z(v).unsqueeze(0), neg_nbrs.unsqueeze(0))
+                neg_probs = 1-probs
+                neg_probs = neg_probs[(1-probs).clone().detach().bernoulli().byte()]
+                loss_non_edge = torch.sum(-torch.log(neg_probs))
+
+                # Backprop & update
+                loss = loss_edge + loss_non_edge
+                cost += loss.data
+                loss.backward()
+                optimizer.step()
+                print('Update Params | {} | Cost: {}'.format(epoch, cost), end='\r')
+                if node_idx == len(network)-1:
+                    print('Update Params | {} | Cost: {}'.format(epoch, cost))
+
+            writer.add_scalar('{}/cost'.format(config.model_tag), 
+                              cost, 
+                              iter_counter*config.epoch + epoch)
+        
+        network.save(config)
+
+        torch.save(edge_prob_model,os.path.join(
+                    PICKLE_PATH, 'models', config.model_tag))
+        checkpoint = {
+            'iter_counter': iter_counter,
+        }
+        torch.save(checkpoint, os.path.join(
+                    PICKLE_PATH, 'checkpoints', config.model_tag))
+
+    pickle.dump(network.Z.cpu().data.numpy(), 
                 open(os.path.join(PICKLE_PATH, 
                                   config.dataset,
-                                  'v_{}_method{}_epoch{}_batch{}_gamma{}_thr{}'.format(
+                                  'Z_{}_{}_gamma{}_thr{}'.format(
                                      config.dataset,
-                                     config.method,
-                                     config.epoch,
-                                     config.batch_size,
+                                     config.sim_metric,
                                      config.gamma,
                                      config.epsilon)), 
                      'wb'))
@@ -263,20 +327,22 @@ def main(config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str)
-    parser.add_argument('--method', type=int, default=1)
+
     parser.add_argument('--gamma', type=float, default=0.9)
-    parser.add_argument('--epsilon', type=float, default=0.001)
-    parser.add_argument('--epoch', type=int, default=20)
-    parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--lr', type=float, default=0.01)
-    parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--epsilon', type=float, default=0.0001)
+
+    parser.add_argument('--sim_metric', type=str)
+    
+    parser.add_argument('--epoch', type=int, default=1)
+    parser.add_argument('--lr', type=float, default=0.0001)
+    parser.add_argument('--neg_smpl_size', type=int, default=5)
     parser.add_argument('--log_period', type=int, default=1)
-    parser.add_argument('--sampling', type=str, default='bernoulli')
+
+    parser.add_argument('--gpu', type=int, default=0)
     import datetime
     model_tag = str(datetime.datetime.today().isoformat('-')).split('.')[0]
     parser.add_argument('--model_tag', type=str, default=model_tag)
     parser.add_argument('--model_load', type=str)
-
     config = parser.parse_args()
     print(config)
     main(config)
