@@ -93,7 +93,7 @@ def main(config):
 
                 if (len(set(distance_history[-10:])) < 3 and 
                          len(distance_history)>10):
-                    netowrk.save(config)
+                    network.save(config)
                     print('Optimize Z | {:4d} | distance: {:10f}'.format(
                                 iter_counter_optZ, distance))
                     break
