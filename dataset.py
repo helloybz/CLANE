@@ -83,6 +83,7 @@ class GraphDataset(Dataset):
         io = open(os.path.join(PICKLE_PATH, config.dataset, config.model_tag), 'wb')
         pickle.dump(self.Z.cpu().data.numpy(), io)
         io.close()
+        nx.write_gpickle(self.G, os.path.join(PICKLE_PATH, 'network', config.model_tag))
 
     def load(self, config):
         import pickle, os
@@ -93,6 +94,7 @@ class GraphDataset(Dataset):
         for idx, v in enumerate(self.G.nodes()):
             self.G.nodes()[v]['z'] = torch.tensor(loaded_Z[idx]).to(torch.device('cuda:{}'.format(config.gpu)))
         io.close()
+        self.G = nx.read_gpickle(os.path.join(PICKLE_PATH, 'network', config.model_tag))
 
 class CoraDataset(GraphDataset):
     def __init__(self, sampled=False, **kwargs):
