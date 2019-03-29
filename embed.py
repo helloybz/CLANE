@@ -85,7 +85,7 @@ def main(config):
 
                 distance = torch.norm(network.Z.clone() - previous_Z, 2)
                 distance_history.append(distance.item())
-                flag_done = (distance==0)
+                flag_done = (distance_history[0]==0)
                 print('Optimize Z | {:4d} | distance: {:10f}'.format(
                             iter_counter_optZ, distance), end='\r')
                 writer.add_scalar('{}/distance'.format(config.model_tag), 
