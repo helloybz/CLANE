@@ -4,16 +4,20 @@ import os
 import pdb
 import pickle
 
+import networkx as nx 
+from scipy.spatial.distance import cosine
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.metrics import f1_score
+from sklearn.metrics import roc_auc_score
 from torch import device
 
 from dataset import CoraDataset
 from settings import DATA_PATH
 from settings import PICKLE_PATH
 
+DATASET_MAP = {'cora':CoraDataset}
 
 def node_classification(embeddings, labels, **kwargs):
     # split dataset
@@ -67,7 +71,7 @@ def node_classification(embeddings, labels, **kwargs):
         criterion = CrossEntropyLoss()
         optimizer = SGD(clf.parameters(), lr=0.001, momentum=0.9)
 
-        for epoch in range(10):
+        for epoch in range(100):
             for x, y in DataLoader(TrainSet(), shuffle=True):
                optimizer.zero_grad()
                output = clf(x)
@@ -91,26 +95,44 @@ def node_classification(embeddings, labels, **kwargs):
     result['macro_f1'] = f1_score(pred, test_Y, average='macro')
     return result
 
+def link_prediction(model_tag, **kwargs):
+    target_network = nx.read_gpickle(os.path.join(PICKLE_PATH, 'network', model_tag))
+    original_network = DATASET_MAP[model_tag.split('_')[0]](device=kwargs['device']).G
+    
+    removed_edges = original_network.edges() - target_network.edges()
+    from random import sample
+    negative_edges = sample(list(nx.non_edges(original_network)), len(removed_edges))
+
+    test_edges = list(removed_edges) + negative_edges
+    labels = [1]*len(removed_edges) + [0]*len(negative_edges)
+    
+    pred = list()
+    for src, dst in test_edges: 
+        z_src = target_network.nodes()[src]['z'].cpu()
+        z_dst = target_network.nodes()[dst]['z'].cpu()
+        pred.append(1-cosine(z_src, z_dst)) 
+
+    result = dict()
+    result['model_tag'] = model_tag
+    result['AUC'] = roc_auc_score(labels, pred)
+    return result
+
 def main(config):
-    device_ = device('cpu')
+    device_ = device('cuda')
     
     # load target embeddings. 
     target_paths = glob.glob(os.path.join(DATA_PATH, 
                                           'experiments', 'target',
                                           config.experiment, '*'))
-    
-    embeddings = (pickle.load(open(target_path, 'rb')) for target_path in target_paths)
-    if config.dataset == 'cora':
-        labels = CoraDataset(device=device_).Y.numpy()
-    else:
-        raise ValueError
-    
+
     if config.experiment == 'node_classification':
         for target_path in target_paths:
+            labels = DATASET_MAP[os.path.basename(target_path).split('_')[0]](device=device_).Y.numpy()
             try:
                 embedding = pickle.load(open(target_path, 'rb'))
             except UnicodeDecodeError:
                 embedding = pickle.load(open(target_path, 'rb'), encoding='latin-1')
+
             result = node_classification(embedding, labels, test_size=config.test_size,
                                          name=os.path.basename(target_path)) 
             print('===========================')
@@ -119,6 +141,20 @@ def main(config):
                     print(result[key])
                 else:
                     print(key, '\t', '{:4f}'.format(result[key]))
+    elif config.experiment == 'link_prediction':
+        target_paths = [target_path for target_path in target_paths 
+                        if 'sampled' in target_path]
+        for target_path in target_paths:
+            model_tag = os.path.basename(target_path)
+            result = link_prediction(model_tag=model_tag, device=device_)
+       
+            print('===========================')
+            for key in result.keys():
+                if key == 'model_tag':
+                    print(result[key])
+                else:
+                    print(key, '\t', '{:4f}'.format(result[key]))
+
     else:
         raise ValueError
 
