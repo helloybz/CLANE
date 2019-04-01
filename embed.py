@@ -61,9 +61,8 @@ def main(config):
     print('[MODEL] LOADED')
 
     flag_done = False
-
+    
     iter_counter_optZ = 0
-
     while True:
         # Optimize Z
         print('===================================')
@@ -93,10 +92,11 @@ def main(config):
                 print('Optimize Z | {:4d} | distance: {:10f}'.format(
                             iter_counter_optZ, distance), end='\r')
                 writer.add_scalar('{}/distance'.format(config.model_tag), 
-                        distance.item(), iter_counter_optZ)
-
-                if (len(set(distance_history[-10:])) < 3 and 
-                         len(distance_history)>10):
+                        distance.item(), len(distance_history))
+                if (len(set(distance_history[-20:])) < 20 and 
+                         len(distance_history)>20):
+                    if (config.sim_metric == 'cosine' and
+                            iter_counter_optZ > len(distance_history)): flag_done=True
                     network.save(config)
                     print('Optimize Z | {:4d} | distance: {:10f}'.format(
                                 iter_counter_optZ, distance))
