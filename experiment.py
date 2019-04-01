@@ -5,10 +5,12 @@ import pdb
 import pickle
 
 import networkx as nx 
+from scipy.spatial.distance import cosine
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.metrics import f1_score
+from sklearn.metrics import roc_auc_score
 from torch import device
 
 from dataset import CoraDataset
@@ -93,59 +95,26 @@ def node_classification(embeddings, labels, **kwargs):
     result['macro_f1'] = f1_score(pred, test_Y, average='macro')
     return result
 
-def link_prediction(network, **kwargs):
-    # TODO: Split train/test
+def link_prediction(model_tag, **kwargs):
+    target_network = nx.read_gpickle(os.path.join(PICKLE_PATH, 'network', model_tag))
+    original_network = DATASET_MAP[model_tag.split('_')[0]](device=kwargs['device']).G
+    
+    removed_edges = original_network.edges() - target_network.edges()
     from random import sample
-    network_copy = network.G.copy()
-    test_split = list()
-    for node in network.G.nodes():
-        if network.G.in_degree(node) > 1:
-            sampled_edge = sample(list(network.G.in_edges(node)), k=1)[0]
-            network_copy.remove_edge(*sampled_edge)
-            if list(nx.isolates(network_copy)):
-                network_copy.add_edge(*sampled_edge)
-            else:
-                test_split.append(sampled_edge)
-    print(list(nx.isolates(network_copy)))
-    pdb.set_trace() 
-    negative_pairs = sample(list(nx.non_edges(network.G), k=len(test_split)))
+    negative_edges = sample(list(nx.non_edges(original_network)), len(removed_edges))
 
-    class TrainSet(Dataset):
-        def __init__(self, network):
-            super(TrainSet, self).__init__()
-            self.network = network
-
-    dataset = TrainSet(network_copy)
-    if 'edge_prob' in kwargs['model_tag']:
-        # model load
-        pass
-    else:
-        # init a nn
-        class NeuralNet(Module):
-            def __init__(self, in_feature, number_of_classes):
-                super(NeuralNet, self).__init__()
-                self.fc1 = Linear(in_feature, 500)
-                self.fc2 = Linear(500, 100)
-                self.fc3 = Linear(100, number_of_classes)
-                
-            def forward(self, x):
-                x = relu(self.fc1(x))
-                x = relu(self.fc2(x))
-                x = self.fc3(x)
-                return x
-
-        clf = NeuralNet()
-        # train nn
-
-
+    test_edges = list(removed_edges) + negative_edges
+    labels = [1]*len(removed_edges) + [0]*len(negative_edges)
     
-    
-    # TODO: Balance test split
-    # TODO: Train classifier
-    # TODO: Test
+    pred = list()
+    for src, dst in test_edges: 
+        z_src = target_network.nodes()[src]['z'].cpu()
+        z_dst = target_network.nodes()[dst]['z'].cpu()
+        pred.append(1-cosine(z_src, z_dst)) 
 
     result = dict()
-    result['embedding'] = kwargs['name']
+    result['model_tag'] = model_tag
+    result['AUC'] = roc_auc_score(labels, pred)
     return result
 
 def main(config):
@@ -173,19 +142,15 @@ def main(config):
                 else:
                     print(key, '\t', '{:4f}'.format(result[key]))
     elif config.experiment == 'link_prediction':
+        target_paths = [target_path for target_path in target_paths 
+                        if 'sampled' in target_path]
         for target_path in target_paths:
-            embedding = pickle.load(open(target_path, 'rb'))
             model_tag = os.path.basename(target_path)
-            network = DATASET_MAP[model_tag.split('_')[0]](device=device_)
-            for z, node in zip(embedding,network.G):
-                network.G.nodes()[node]['z'] = z
-
-            result = link_prediction(network, model_tag=model_tag)
+            result = link_prediction(model_tag=model_tag, device=device_)
        
-        for result in results:
             print('===========================')
             for key in result.keys():
-                if key == 'embedding':
+                if key == 'model_tag':
                     print(result[key])
                 else:
                     print(key, '\t', '{:4f}'.format(result[key]))
