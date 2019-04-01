@@ -74,18 +74,22 @@ def main(config):
                 previous_Z = network.Z.clone()
                 for v in network.G.nodes():
                     nbrs = neighbors(network.G, v)
-                    if len(list(nbrs)) == 0:
-                        continue
+                    if len(list(nbrs)) == 0: continue
+                    
                     nbrs = torch.stack([network.z(u) for u in neighbors(network.G, v)])
                     sims = sim_metric(network.z(v), nbrs, dim=-1) 
                     sims = F.softmax(sims, dim=0)
                     network.G.node[v]['z'] = network.x(v) \
                                              + config.gamma * torch.mv(nbrs.t(), sims)
+
+                    # TODO: Consider updating embedding including in-edge messages
+
                     network.G.node[v]['z'] = network.z(v) / torch.norm(network.z(v), 2)
 
                 distance = torch.norm(network.Z.clone() - previous_Z, 2)
                 distance_history.append(distance.item())
                 flag_done = (distance_history[0]==0)
+
                 print('Optimize Z | {:4d} | distance: {:10f}'.format(
                             iter_counter_optZ, distance), end='\r')
                 writer.add_scalar('{}/distance'.format(config.model_tag), 
@@ -158,15 +162,11 @@ def main(config):
                         PICKLE_PATH, 'checkpoints', config.model_tag))
 
         network.save(config)
-    pickle.dump(network.Z.cpu().data.numpy(), 
+
+    pickle.dump(network.Z.cpu().data.numpy(),
                 open(os.path.join(PICKLE_PATH, 
                                   config.dataset,
-                                  'Z_{}_{}_gamma{}_thr{}'.format(
-                                     config.dataset,
-                                     config.sim_metric,
-                                     config.gamma,
-                                     config.epsilon)), 
-                     'wb'))
+                                  config.model_tag), 'wb'))
 
 
 if __name__ == '__main__':
@@ -175,7 +175,6 @@ if __name__ == '__main__':
     parser.add_argument('--sampled', action='store_true')
 
     parser.add_argument('--gamma', type=float, default=0.9)
-    parser.add_argument('--epsilon', type=float, default=0.0001)
 
     parser.add_argument('--sim_metric', type=str)
     
