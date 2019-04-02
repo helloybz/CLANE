@@ -92,7 +92,7 @@ def main(config):
                 print('Optimize Z | {:4d} | distance: {:10f}'.format(
                             iter_counter_optZ, distance), end='\r')
                 writer.add_scalar('{}/distance'.format(config.model_tag), 
-                        distance.item(), len(distance_history))
+                        distance.item(), iter_counter_optZ)
                 if (len(set(distance_history[-20:])) < 20 and 
                          len(distance_history)>20):
                     if (config.sim_metric == 'cosine' and
