@@ -2,8 +2,7 @@ import argparse
 import os
 import pickle
 
-from networkx.classes.function import neighbors
-from networkx.classes.function import non_neighbors
+import networkx as nx
 from tensorboardX import SummaryWriter
 import torch
 from torch.distributions import Bernoulli
@@ -55,54 +54,50 @@ def main(config):
             edge_prob_model = EdgeProbability(dim=network.feature_size).to(device)
             iter_counter_updtP = 0
 
-        sim_metric = edge_prob_model.get_similarities
+        sim_metric = edge_prob_model.forward
     else:
         raise ValueError
     print('[MODEL] LOADED')
 
-    flag_done = False
+    end_flag = False
     
-    iter_counter_optZ = 0
+    iteration = -1
     while True:
+        iteration += 1
+        
         # Optimize Z
         print('===================================')
         with torch.no_grad():
-            distance_history = []
-            while True:
-                iter_counter_optZ += 1
+            for i in range(config.epoch_Z):
                 previous_Z = network.Z.clone()
                 for v in network.G.nodes():
-                    nbrs = neighbors(network.G, v)
-                    if len(list(nbrs)) == 0: continue
+                    nbrs = list(nx.neighbors(network.G, v))
+                    if len(nbrs) == 0: continue
                     
-                    nbrs = torch.stack([network.z(u) for u in neighbors(network.G, v)])
-                    sims = sim_metric(network.z(v), nbrs, dim=-1) 
-                    sims = F.softmax(sims, dim=0)
-                    network.G.node[v]['z'] = network.x(v) \
-                                             + config.gamma * torch.mv(nbrs.t(), sims)
+                    z_nbrs = torch.stack([network.G.nodes[u]['z'] for u in nbrs])
+                    sims = sim_metric(network.G.nodes[v]['z'], z_nbrs, dim=-1) 
+                    sims = F.softmax(sims, dim=-1)
+                    sims = sims.squeeze()
+                    if sims.dim() == 0: sims = sims.unsqueeze(0)
 
+                    network.G.node[v]['z'] = network.G.nodes[v]['x'] \
+                                             + config.gamma * torch.mv(z_nbrs.t(), sims)
                     # TODO: Consider updating embedding including in-edge messages
 
-                    network.G.node[v]['z'] = network.z(v) / torch.norm(network.z(v), 2)
+#                     network.G.node[v]['z'] = network.z(v) / torch.norm(network.z(v), 2)
 
-                distance = torch.norm(network.Z.clone() - previous_Z, 2)
-                distance_history.append(distance.item())
-                flag_done = (distance_history[0]==0)
+                distance = torch.norm(network.Z.clone() - previous_Z, 1)
+                end_flag = (i == 0 and distance == 0)
 
                 print('Optimize Z | {:4d} | distance: {:10f}'.format(
-                            iter_counter_optZ, distance), end='\r')
+                            iteration + i, distance), end='\r')
                 writer.add_scalar('{}/distance'.format(config.model_tag), 
-                        distance.item(), iter_counter_optZ)
-                if (len(set(distance_history[-20:])) < 20 and 
-                         len(distance_history)>20):
-                    if (config.sim_metric == 'cosine' and
-                            iter_counter_optZ > len(distance_history)): flag_done=True
-                    network.save(config)
-                    print('Optimize Z | {:4d} | distance: {:10f}'.format(
-                                iter_counter_optZ, distance))
-                    break
+                        distance.item(), iteration + i)
+            network.save(config)
+            print('Optimize Z | {:4d} | distance: {:10f}'.format(
+                        iteration + i, distance))
        
-        if flag_done: break
+        if end_flag: break
 
         if config.sim_metric == 'edge_prob':
             # Update params
@@ -111,57 +106,55 @@ def main(config):
                     lr=config.lr,
                     )
             cost_history = []
-            epoch = 0
-            while True:
+            for i in range(1, config.epoch_P + 1):
                 cost = 0
-                iter_counter_updtP += 1
-                epoch += 1
+    
                 for node_idx, v in enumerate(network.G.nodes()):
                     optimizer.zero_grad()
                     edge_prob_model.zero_grad()
-                    nbrs = neighbors(network.G, v)
-                    nbrs = list(nbrs)
+
+                    nbrs = list(nx.neighbors(network.G, v))
+
                     if len(nbrs) != 0:
-                        nbrs = torch.stack([network.z(u) for u in nbrs])
-                        probs = edge_prob_model(network.z(v).unsqueeze(0), nbrs.unsqueeze(0))
+                        z_v = network.G.nodes[v]['z'].div(network.G.nodes[v]['z'])
+                        z_nbrs = torch.stack([network.G.nodes[u]['z'] for u in nbrs])
+                        probs = edge_prob_model(network.G.nodes[v]['z'], z_nbrs)
                         loss_edge = torch.sum(-torch.log(probs))
                     else:
                         loss_edge = 0
 
-                    neg_nbrs = torch.stack([network.z(u) 
-                            for u in list(non_neighbors(network.G, v))])
-                    probs = edge_prob_model(network.z(v).unsqueeze(0), neg_nbrs.unsqueeze(0))
-                    neg_probs = 1-probs
-                    neg_probs = neg_probs[(1-probs).clone().detach().bernoulli().byte()]
-                    loss_non_edge = torch.sum(-torch.log(neg_probs))
+                    z_neg_nbrs = torch.stack([network.G.nodes[u]['z'] 
+                            for u in nx.non_neighbors(network.G, v)])
 
-                    # Backprop & update
+                    pos_probs = edge_prob_model(network.G.nodes[v]['z'], z_neg_nbrs)
+                    neg_probs = torch.ones(pos_probs.shape[0]).to(device)-pos_probs.squeeze()
+                    sampled_indices = neg_probs.detach().bernoulli().byte()
+                    neg_probs = neg_probs[sampled_indices]
+                    loss_non_edge = torch.sum(-torch.log(neg_probs))
+                    if len(nbrs) != 0:
+                        loss_non_edge = len(nbrs)*loss_non_edge/len(neg_probs)
+                    else:
+                        loss_non_edge = 5 * loss_non_edge/len(neg_probs)
+                    
                     loss = loss_edge + loss_non_edge
                     cost += loss.data
                     loss.backward()
                     optimizer.step()
-                    print('Update Params | {} | Cost: {:4f}'.format(epoch, cost), end='\r')
+
+                    print('Update Params | {} | Cost: {:4f} | mean: {:4f}'.format(
+                                config.epoch_P*iteration+i, cost), end='\r')
                     if node_idx == len(network)-1:
-                        print('Update Params | {} | Cost: {:4f}'.format(epoch, cost))
-                
-                cost_history.append(int(cost))
+                        print('Update Params | {} | Cost: {:4f}'.format(config.epoch_P*iteration+i, cost))
                 
                 writer.add_scalar('{}/cost'.format(config.model_tag), 
-                                  cost, iter_counter_updtP)
-
-                if (len(set(cost_history[-20:])) < 10 and
-                        len(cost_history) > 20):
-                    break
+                                  cost, config.epoch_P*iteration + i)
 
             torch.save(edge_prob_model,os.path.join(
                         PICKLE_PATH, 'models', config.model_tag))
             checkpoint = {
-                'iter_counter_updtP': iter_counter_updtP
             }
             torch.save(checkpoint, os.path.join(
                         PICKLE_PATH, 'checkpoints', config.model_tag))
-
-        network.save(config)
 
     pickle.dump(network.Z.cpu().data.numpy(),
                 open(os.path.join(PICKLE_PATH, 
@@ -175,9 +168,10 @@ if __name__ == '__main__':
     parser.add_argument('--sampled', action='store_true')
 
     parser.add_argument('--gamma', type=float, default=0.9)
+    parser.add_argument('--epoch_Z', type=int, default=100)
 
     parser.add_argument('--sim_metric', type=str)
-    
+    parser.add_argument('--epoch_P', type=int, default=300)
     parser.add_argument('--lr', type=float, default=0.0001)
 
     parser.add_argument('--gpu', type=int, default=0)

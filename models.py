@@ -16,38 +16,26 @@ class EdgeProbability(nn.Module):
                            bias=False)
         self.softmax = nn.Softmax(dim=0)
 
-    def forward1(self, embedding_pairs):
-        srcs  = embedding_pairs[:,0,:].clone()
-        dests = embedding_pairs[:,1,:].clone()
-
-        az = self.A(srcs)
-        az = az.unsqueeze(-2)
-        
-        bz = self.B(dests)
-        bz = bz.unsqueeze(-1)
-        
-        output = torch.matmul(az, bz)
-        output = normalize_elwise(output)[0]
-        output = torch.sigmoid(output)
-        return output
-
-    def forward(self, Z_srcs, Z_dests, **kwargs):
+    def forward(self, z_srcs, zs_dests, **kwargs):
         # Z_srcs : (B x d)
         # Z_dests: (B x |N| x d)
         # Output : (B)
-        AZ = self.A(Z_srcs) # (B x d) * (d x d) = (B x d)
+        if z_srcs.dim() == 1: z_srcs = z_srcs.unsqueeze(0)
+        if zs_dests.dim() == 2: zs_dests = zs_dests.unsqueeze(0)
+        AZ = self.A(z_srcs) # (B x d) * (d x d) = (B x d)
         AZ = torch.unsqueeze(input=AZ, dim=1)
-        BZ_dests = self.B(Z_dests) # (B x |N| x d) * (d x d) = (B x |N| x d)
+        BZ_dests = self.B(zs_dests) # (B x |N| x d) * (d x d) = (B x |N| x d)
         BZ_dests = BZ_dests.transpose(1, 2) # (B x d x |N|)
-        output = torch.matmul(AZ, BZ_dests) # (B x 1 x 1)
-        output.squeeze_() # (B)
-        if output.dim() == 0: output.unsqueeze_(0)
+        output = torch.matmul(AZ, BZ_dests) # (B x 1 x |N|)
+        output = output.squeeze()
+        if output.dim() == 0: output = output.unsqueeze(0)
         return torch.sigmoid(output) 
  
-    def get_similarities(self, Z_srcs, Z_dests, **kwargs):
-        if Z_srcs.dim() == 1:
-            Z_srcs = Z_srcs.unsqueeze(0)
-        if Z_dests.dim() == 2:
-            Z_dests = Z_dests.unsqueeze(0)
-
-        return self.forward(Z_srcs, Z_dests)
+#    def get_similarities(self, z_srcs, zs_dests, **kwargs):
+#        import pdb; pdb.set_trace()
+#        if z_srcs.dim() == 1:
+#            z_srcs = z_srcs.unsqueeze(0)
+#        if zs_dests.dim() == 2:
+#            zs_dests = zs_dests.unsqueeze(0)
+#
+#        return self.forward(z_srcs, zs_dests)

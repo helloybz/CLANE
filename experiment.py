@@ -6,12 +6,12 @@ import pickle
 
 import networkx as nx 
 from scipy.spatial.distance import cosine
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegressionCV
 from sklearn.model_selection import train_test_split
-from sklearn.multiclass import OneVsRestClassifier
 from sklearn.metrics import f1_score
 from sklearn.metrics import roc_auc_score
 from torch import device
+import torch
 
 from dataset import CoraDataset
 from settings import DATA_PATH
@@ -83,9 +83,9 @@ def node_classification(embeddings, labels, **kwargs):
             pred = torch.max(clf(torch.tensor(test_X).to(device_)), 1)[-1].cpu()
 
     elif config.clf == 'lr':
-        clf = OneVsRestClassifier(
-                LogisticRegression(random_state=0, solver='lbfgs', 
-                                   multi_class='multinomial', max_iter=300))
+        
+        clf = LogisticRegressionCV(cv=5, random_state=0, solver='lbfgs',
+                                 multi_class='multinomial', max_iter=10000)
         clf.fit(train_X, train_Y)
         pred = clf.predict(test_X)
 
@@ -96,6 +96,7 @@ def node_classification(embeddings, labels, **kwargs):
     return result
 
 def link_prediction(model_tag, **kwargs):
+
     target_network = nx.read_gpickle(os.path.join(PICKLE_PATH, 'network', model_tag))
     original_network = DATASET_MAP[model_tag.split('_')[0]](device=kwargs['device']).G
     
@@ -110,11 +111,22 @@ def link_prediction(model_tag, **kwargs):
     for src, dst in test_edges: 
         z_src = target_network.nodes()[src]['z'].cpu()
         z_dst = target_network.nodes()[dst]['z'].cpu()
-        pred.append(1-cosine(z_src, z_dst)) 
+        if 'edgeprob' in model_tag:
+            with torch.no_grad():
+                model = torch.load(os.path.join(PICKLE_PATH, 'models', model_tag)).cuda()
+                pdb.set_trace()
+                prob = model.forward1(torch.stack((z_src.cuda(), z_dst.cuda())).unsqueeze(0)).squeeze()
+                pred.append(1 if float(prob) > 0.4 else 0)
+        else:
+            pred.append(1-cosine(z_src, z_dst)) 
 
+ 
     result = dict()
     result['model_tag'] = model_tag
     result['AUC'] = roc_auc_score(labels, pred)
+    # AUC
+    # True Positive Rate = 엣지 있는 pair들 중 몇 개나 엣지가 있다고 했는지.
+    # False Positive Rate = 엣지 없는 pairs들 중 몇개나 엣지가 있다고 했는지.
     return result
 
 def main(config):
