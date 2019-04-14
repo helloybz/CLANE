@@ -36,7 +36,7 @@ def node_classification(embeddings, labels, **kwargs):
 
         in_feature = train_X.shape[1]
         number_of_classes = len(set(test_Y))
-        device_ = device('cuda:0')
+        device_ = device('cuda:{}'.format(config.gpu))
 
         one_hot_train_Y = torch.zeros(len(train_Y), number_of_classes).to(device_)
         for idx, label in enumerate(train_Y):
@@ -71,7 +71,7 @@ def node_classification(embeddings, labels, **kwargs):
         criterion = CrossEntropyLoss()
         optimizer = SGD(clf.parameters(), lr=0.001, momentum=0.9)
 
-        for epoch in range(100):
+        for epoch in range(config.epoch):
             for x, y in DataLoader(TrainSet(), shuffle=True):
                optimizer.zero_grad()
                output = clf(x)
@@ -114,7 +114,6 @@ def link_prediction(model_tag, **kwargs):
         if 'edgeprob' in model_tag:
             with torch.no_grad():
                 model = torch.load(os.path.join(PICKLE_PATH, 'models', model_tag)).cuda()
-                pdb.set_trace()
                 prob = model.forward1(torch.stack((z_src.cuda(), z_dst.cuda())).unsqueeze(0)).squeeze()
                 pred.append(1 if float(prob) > 0.4 else 0)
         else:
@@ -179,6 +178,8 @@ if __name__ == "__main__":
     parser.add_argument('--test_size', type=float, default='0.4')
    
     parser.add_argument('--clf', type=str, default='nn')
+    parser.add_argument('--gpu', type=str, default='0')
+    parser.add_argument('--epoch', type=int, default=100)
     config = parser.parse_args()
     print(config)
     main(config)
