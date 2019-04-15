@@ -96,7 +96,6 @@ def node_classification(embeddings, labels, **kwargs):
     return result
 
 def link_prediction(model_tag, **kwargs):
-
     target_network = nx.read_gpickle(os.path.join(PICKLE_PATH, 'network', model_tag))
     original_network = DATASET_MAP[model_tag.split('_')[0]](device=kwargs['device']).G
     

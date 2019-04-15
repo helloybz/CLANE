@@ -9,7 +9,7 @@ from settings import DATA_PATH
 
 
 class GraphDataset(Dataset):
-    def __init__(self, dataset, sampled, **kwargs):
+    def __init__(self, dataset, sampled, device=torch.device('cpu'), **kwargs):
         self.G = nx.DiGraph()
 
         with open(os.path.join(DATA_PATH, dataset,'{}.cites'.format(dataset)),
@@ -30,8 +30,8 @@ class GraphDataset(Dataset):
                     break
 
                 id_, *content, label = line.split('\t')
-                self.G.nodes[id_]['x'] = torch.tensor([float(value) for value in content]).to(kwargs['device'])
-                self.G.nodes[id_]['z'] = self.G.nodes[id_]['x'].clone().to(kwargs['device'])
+                self.G.nodes[id_]['x'] = torch.tensor([float(value) for value in content]).to(device)
+                self.G.nodes[id_]['z'] = self.G.nodes[id_]['x'].clone().to(device)
                 self.G.nodes[id_]['label'] = label.strip()
 
         if sampled:
@@ -69,9 +69,9 @@ class GraphDataset(Dataset):
         label_set = list(set(labels))
         labels = [label_set.index(label) for label in labels]
         return torch.tensor(labels)
-   
+
     @property
-    def feature_size(self):
+    def d(self):
         return self.Z.shape[-1]
 
     def z(self, key):

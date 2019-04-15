@@ -15,27 +15,35 @@ from settings import PICKLE_PATH, DATA_PATH
 
 
 class DataTransformer:
-    def transform(self, networkx, target_model):
-        io = open('{}.cites'.format(target_model), 'w') 
-        for src, nbrs in networkx.G.adjacency():
-            line = ''.join([i+' ' for i in [src]+list(nbrs.keys())])
-            io.write(line + '\n')
-        io.close() 
-
-    def transform_out(self, dataset, model, src_path, output_path):
+    def transform_out(self, src_model, src_path, output_model, output_path):
         import torch
-        import pdb; pdb.set_trace()
+        import networkx as nx
         io = open(src_path, 'r')
-        io.readline()
-        if model == 'deepwalk':
+        if output_model == 'cora':
+            from dataset import CoraDataset
+            dataset = CoraDataset()
+            if 'sampled' in output_path:
+                dataset.G = nx.read_gpickle(os.path.join(PICKLE_PATH, 'network', 'cora_X_sampled'))
+        else:
+            raise ValueError
+
+        if src_model == 'deepwalk':
+            pdb.set_trace()
+            io.readline()
             while True:
                 sample = io.readline()
                 if not sample: break
                 node_id, *embedding = sample.split(' ')
                 embedding = torch.tensor(([float(val.strip()) for val in embedding]))
                 dataset.G.nodes[node_id]['z'] = embedding
+        else:
+            raise ValueError
+
         io.close()
-        
+
+        nx.write_gpickle(dataset.G, os.path.join(PICKLE_PATH, 'network', output_path))
+        for node_id in dataset.G.nodes(): 
+            dataset.G.nodes[node_id]['z'] = dataset.G.nodes[node_id]['z'].cpu()
         pickle.dump(dataset.Z.numpy(), open(os.path.join(DATA_PATH, output_path), 'wb'))
         
         
@@ -50,8 +58,5 @@ def normalize_elwise(*tensors):
 
 if __name__ == '__main__':
     transformer = DataTransformer()
-    import torch
-    from dataset import CoraDataset
-    cora_network = CoraDataset(device=torch.device('cpu'))
-    src_path = os.path.join(DATA_PATH, 'experiments', 'target' ,'node_classification', 'cora_deepwalk_d1433')
-    transformer.transform_out(cora_network, 'deepwalk', src_path, 'test')
+    src_path = os.path.join('cora_sampled.embeddings')
+    transformer.transform_out('deepwalk', src_path, 'cora', 'cora_deepwalk_sampled_d1433')
