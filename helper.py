@@ -1,14 +1,7 @@
 import pdb
 import os
 import pickle
-from multiprocessing.pool import ThreadPool
 
-import requests
-from PIL import Image
-from bs4 import BeautifulSoup
-from requests.adapters import HTTPAdapter
-from urllib3 import Retry
-import numpy as np
 from torch.nn.functional import normalize
 
 from settings import PICKLE_PATH, DATA_PATH
@@ -27,8 +20,7 @@ class DataTransformer:
         else:
             raise ValueError
 
-        if src_model == 'deepwalk':
-            pdb.set_trace()
+        if src_model == 'deepwalk' or src_model == 'node2vec':
             io.readline()
             while True:
                 sample = io.readline()
@@ -58,5 +50,7 @@ def normalize_elwise(*tensors):
 
 if __name__ == '__main__':
     transformer = DataTransformer()
-    src_path = os.path.join('cora_sampled.embeddings')
-    transformer.transform_out('deepwalk', src_path, 'cora', 'cora_deepwalk_sampled_d1433')
+    import glob
+    src_path = glob.glob(os.path.join('cora_node2vec_*'))
+    for path in src_path:
+        transformer.transform_out('node2vec', path, 'cora', path)

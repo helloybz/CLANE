@@ -88,7 +88,6 @@ def node_classification(embeddings, labels, **kwargs):
                                  multi_class='multinomial', max_iter=10000)
         clf.fit(train_X, train_Y)
         pred = clf.predict(test_X)
-
     result = dict()
     result['embedding'] = kwargs['name']
     result['micro_f1'] = f1_score(pred, test_Y, average='micro')
