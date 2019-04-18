@@ -39,7 +39,7 @@ def main(config):
     else:
         raise ValueError
     print('[DATASET] LOADED, {}'.format(config.dataset))
-
+    
     print('[MODEL] LOADING')
     if config.sim_metric == 'cosine':
         sim_metric = F.cosine_similarity
@@ -85,14 +85,14 @@ def main(config):
                     network.G.node[v]['z'] = network.G.nodes[v]['x'] \
                                              + config.gamma * torch.mv(z_nbrs.t(), sims)
 
-                distance = torch.norm(network.Z.clone() - previous_Z, 1)
+                distance = torch.norm(network.Z - previous_Z, 1)
                 end_flag = (i == 0 and distance == 0)
                 
-                print('Optimize Z | {:4d} | distance: {:10f} | Cumm distance: '.format(iteration + i, distance), end='\r')
+                print('Optimize Z | {:4d} | distance: {:10f} | Cumm distance: '.format(iteration*config.epoch_Z + i, distance), end='\r')
                 writer.add_scalar('{}/distance'.format(config.model_tag), 
                         distance.item(), config.epoch_Z*iteration + i)
             network.save(config)
-            print('Optimize Z | {:4d} | distance: {:10f} | Cumm distance: '.format(iteration + i, distance))
+            print('Optimize Z | {:4d} | distance: {:10f} | Cumm distance: '.format(iteration*config.epoch_Z + i, distance))
        
         if end_flag: break
 

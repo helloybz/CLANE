@@ -1,7 +1,6 @@
 import argparse
 import glob
 import os
-import pdb
 import pickle
 
 import networkx as nx 
@@ -19,79 +18,82 @@ from settings import PICKLE_PATH
 
 DATASET_MAP = {'cora':CoraDataset}
 
-def node_classification(embeddings, labels, **kwargs):
-    # split dataset
-    train_X, test_X, train_Y, test_Y = train_test_split(
-        embeddings, labels, test_size=kwargs['test_size'], random_state=0)
-    
-    if config.clf == 'nn':
-        import torch
-        from torch import tensor
-        from torch.nn import CrossEntropyLoss
-        from torch.nn import Linear
-        from torch.nn import Module
-        from torch.nn.functional import relu
-        from torch.optim import SGD
-        from torch.utils.data import DataLoader, Dataset
-
-        in_feature = train_X.shape[1]
-        number_of_classes = len(set(test_Y))
-        device_ = device('cuda:{}'.format(config.gpu))
-
-        one_hot_train_Y = torch.zeros(len(train_Y), number_of_classes).to(device_)
-        for idx, label in enumerate(train_Y):
-            one_hot_train_Y[idx][label] = 1
-        
-        class TrainSet(Dataset):
-            def __init__(self):
-                super(TrainSet, self).__init__()
-                self.train_X = torch.tensor(train_X).to(device_)
-                self.train_Y = torch.tensor(train_Y).long().to(device_)
-
-            def __getitem__(self, idx):
-                return self.train_X[idx], self.train_Y[idx]
-
-            def __len__(self):
-                return self.train_X.shape[0]
-
-        class NeuralNet(Module):
-            def __init__(self):
-                super(NeuralNet, self).__init__()
-                self.fc1 = Linear(in_feature, 500)
-                self.fc2 = Linear(500, 100)
-                self.fc3 = Linear(100, number_of_classes)
-                
-            def forward(self, x):
-                x = relu(self.fc1(x))
-                x = relu(self.fc2(x))
-                x = self.fc3(x)
-                return x
-
-        clf = NeuralNet().to(device_)
-        criterion = CrossEntropyLoss()
-        optimizer = SGD(clf.parameters(), lr=0.001, momentum=0.9)
-
-        for epoch in range(config.epoch):
-            for x, y in DataLoader(TrainSet(), shuffle=True):
-               optimizer.zero_grad()
-               output = clf(x)
-               loss = criterion(output, y)
-               loss.backward()
-               optimizer.step()
-
-        with torch.no_grad():
-            pred = torch.max(clf(torch.tensor(test_X).to(device_)), 1)[-1].cpu()
-
-    elif config.clf == 'lr':
-        
-        clf = LogisticRegressionCV(cv=5, random_state=0, solver='lbfgs',
-                                 multi_class='multinomial', max_iter=10000)
-        clf.fit(train_X, train_Y)
-        pred = clf.predict(test_X)
+def node_classification(embeddings, labels, test_size, **kwargs):
     result = dict()
     result['embedding'] = kwargs['name']
-    result['micro_f1'] = f1_score(pred, test_Y, average='micro')
-    result['macro_f1'] = f1_score(pred, test_Y, average='macro')
+    result['micro_f1'] = list()
+    result['macro_f1'] = list()
+    
+    for i in range(10):
+        # split dataset
+        train_X, test_X, train_Y, test_Y = train_test_split(
+            embeddings, labels, test_size=test_size, random_state=i)
+        
+        if config.clf == 'nn':
+            import torch
+            from torch import nn
+            from torch.nn import functional as F
+            from torch.utils.data import DataLoader, Dataset
+             
+            in_feature = train_X.shape[1]
+            number_of_classes = len(set(test_Y))
+
+            one_hot_train_Y = torch.zeros(len(train_Y), number_of_classes).to(kwargs['device'])
+            for idx, label in enumerate(train_Y):
+                one_hot_train_Y[idx][label] = 1
+            
+            class TrainSet(Dataset):
+                def __init__(self):
+                    super(TrainSet, self).__init__()
+                    self.train_X = torch.tensor(train_X).to(kwargs['device'])
+                    self.train_Y = torch.tensor(train_Y).long().to(kwargs['device'])
+                
+                def __getitem__(self, idx):
+                    return self.train_X[idx], self.train_Y[idx]
+                
+                def __len__(self):
+                    return self.train_X.shape[0]
+            
+            class NeuralNet(nn.Module):
+                def __init__(self):
+                    super(NeuralNet, self).__init__()
+                    self.fc1 = nn.Linear(in_feature, 500)
+                    self.fc2 = nn.Linear(500, 100)
+                    self.fc3 = nn.Linear(100, number_of_classes)
+                    
+                def forward(self, x):
+                    x = F.relu(self.fc1(x))
+                    x = F.relu(self.fc2(x))
+                    x = self.fc3(x)
+                    return x
+                    
+            clf = NeuralNet().to(kwargs['device'])
+            criterion = nn.CrossEntropyLoss()
+            optimizer = torch.optim.SGD(clf.parameters(), lr=0.001, momentum=0.9)
+            
+            for epoch in range(100):
+                for x, y in DataLoader(TrainSet(), shuffle=True):
+                   optimizer.zero_grad()
+                   output = clf(x)
+                   loss = criterion(output, y)
+                   loss.backward()
+                   optimizer.step()
+            
+            with torch.no_grad():
+                pred = torch.max(clf(torch.tensor(test_X).to(kwargs['device'])), 1)[-1].cpu()
+        
+        elif config.clf == 'lr':
+            clf = LogisticRegressionCV(cv=5, random_state=0, solver='lbfgs', 
+                                       multi_class='multinomial', max_iter=1000000)
+            clf.fit(train_X, train_Y)
+            pred = clf.predict(test_X)
+        
+        result['micro_f1'].append(f1_score(pred, test_Y, average='micro'))
+        result['macro_f1'].append(f1_score(pred, test_Y, average='macro'))
+    
+    result['micro_f1'] = sum(result['micro_f1'])/len(result['micro_f1'])
+    result['macro_f1'] = sum(result['macro_f1'])/len(result['macro_f1'])
+    
     return result
 
 def link_prediction(model_tag, **kwargs):
@@ -127,7 +129,6 @@ def link_prediction(model_tag, **kwargs):
     return result
 
 def main(config):
-    device_ = device('cuda')
     
     # load target embeddings. 
     target_paths = glob.glob(os.path.join(DATA_PATH, 
@@ -135,6 +136,8 @@ def main(config):
                                           config.experiment, '*'))
 
     if config.experiment == 'node_classification':
+        device_ = device('cuda:{}'.format(config.gpu))
+
         for target_path in target_paths:
             labels = DATASET_MAP[os.path.basename(target_path).split('_')[0]](device=device_).Y.numpy()
             try:
@@ -143,13 +146,14 @@ def main(config):
                 embedding = pickle.load(open(target_path, 'rb'), encoding='latin-1')
 
             result = node_classification(embedding, labels, test_size=config.test_size,
-                                         name=os.path.basename(target_path)) 
+                                         name=os.path.basename(target_path), device=device_) 
             print('===========================')
             for key in result.keys():
                 if key == 'embedding':
                     print(result[key])
                 else:
                     print(key, '\t', '{:4f}'.format(result[key]))
+
     elif config.experiment == 'link_prediction':
         target_paths = [target_path for target_path in target_paths 
                         if 'sampled' in target_path]
@@ -172,12 +176,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('--experiment', type=str, default='node_classification')
-    parser.add_argument('--dataset', type=str, default='cora')
-    parser.add_argument('--test_size', type=float, default='0.4')
-   
-    parser.add_argument('--clf', type=str, default='nn')
-    parser.add_argument('--gpu', type=str, default='0')
-    parser.add_argument('--epoch', type=int, default=100)
+    
+    # args for node classification
+    parser.add_argument('--test_size', type=float)
+    parser.add_argument('--clf', type=str)
+    parser.add_argument('--gpu', type=int, default=0)
+
     config = parser.parse_args()
     print(config)
     main(config)

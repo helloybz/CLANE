@@ -1,6 +1,7 @@
 import pdb
 import os
 import pickle
+import argparse
 
 from torch.nn.functional import normalize
 
@@ -47,10 +48,21 @@ def normalize_elwise(*tensors):
     tensors = [tensor.reshape(dim) for tensor, dim in zip(tensors, keep_dim)]
     return tuple(tensors)
 
+def main(config):
+    if config.task == 'transform':
+        import glob
+        transformer = DataTransformer()
+        src_path = glob.glob(os.path.join(config.target_pattern))
+        for path in src_path:
+            transformer.transform_out('node2vec', path, 'cora', path)
+    else:
+        raise ValueError
+        
 
 if __name__ == '__main__':
-    transformer = DataTransformer()
-    import glob
-    src_path = glob.glob(os.path.join('cora_node2vec_*'))
-    for path in src_path:
-        transformer.transform_out('node2vec', path, 'cora', path)
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--task', type=str)
+    parser.add_argument('--target_pattern', type=str)
+    config = parser.parse_args()
+    main(config)
