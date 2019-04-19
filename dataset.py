@@ -34,6 +34,7 @@ class GraphDataset(Dataset):
                 self.G.nodes[id_]['z'] = self.G.nodes[id_]['x'].clone().to(device)
                 self.G.nodes[id_]['label'] = label.strip()
 
+        self.node_list = list(self.G.nodes())
         if sampled:
             from random import sample
             for node in self.G.nodes():
@@ -50,6 +51,8 @@ class GraphDataset(Dataset):
     def __len__(self):
         return nx.number_of_nodes(self.G)
 
+    def index(self, key):
+        return self.node_list.index(key)
     def x(self, key):
         return self.G.nodes[key]['x']
     
@@ -71,7 +74,7 @@ class GraphDataset(Dataset):
         return torch.tensor(labels)
    
     @property
-    def feature_size(self):
+    def d(self):
         return self.Z.shape[-1]
 
     def z(self, key):
