@@ -7,10 +7,10 @@ import networkx as nx
 from scipy.spatial.distance import cosine
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.model_selection import train_test_split
-from sklearn.multiclass import OneVsRestClassifier
 from sklearn.metrics import f1_score
 from sklearn.metrics import roc_auc_score
 from torch import device
+import torch
 
 from dataset import CoraDataset
 from settings import DATA_PATH
@@ -18,9 +18,10 @@ from settings import PICKLE_PATH
 
 DATASET_MAP = {'cora':CoraDataset}
 
-def node_classification(embeddings, labels, test_size, **kwargs):
+def node_classification(embeddings, labels, test_size, name, **kwargs):
+    import pdb; pdb.set_trace()
     result = dict()
-    result['embedding'] = kwargs['name']
+    result['embedding'] = name
     result['micro_f1'] = list()
     result['macro_f1'] = list()
     
@@ -111,11 +112,21 @@ def link_prediction(model_tag, **kwargs):
     for src, dst in test_edges: 
         z_src = target_network.nodes()[src]['z'].cpu()
         z_dst = target_network.nodes()[dst]['z'].cpu()
-        pred.append(1-cosine(z_src, z_dst)) 
+        if 'edgeprob' in model_tag:
+            with torch.no_grad():
+                model = torch.load(os.path.join(PICKLE_PATH, 'models', model_tag)).cuda()
+                prob = model.forward1(torch.stack((z_src.cuda(), z_dst.cuda())).unsqueeze(0)).squeeze()
+                pred.append(1 if float(prob) > 0.4 else 0)
+        else:
+            pred.append(1-cosine(z_src, z_dst)) 
 
+ 
     result = dict()
     result['model_tag'] = model_tag
     result['AUC'] = roc_auc_score(labels, pred)
+    # AUC
+    # True Positive Rate = 엣지 있는 pair들 중 몇 개나 엣지가 있다고 했는지.
+    # False Positive Rate = 엣지 없는 pairs들 중 몇개나 엣지가 있다고 했는지.
     return result
 
 def main(config):
@@ -127,9 +138,9 @@ def main(config):
 
     if config.experiment == 'node_classification':
         device_ = device('cuda:{}'.format(config.gpu))
-
+        import pdb; pdb.set_trace()
         for target_path in target_paths:
-            labels = DATASET_MAP[os.path.basename(target_path).split('_')[0]](device=device_).Y.numpy()
+            labels = DATASET_MAP[os.path.basename(target_path).split('_')[0]](device=device_).Y
             try:
                 embedding = pickle.load(open(target_path, 'rb'))
             except UnicodeDecodeError:

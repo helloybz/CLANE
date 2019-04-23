@@ -1,6 +1,5 @@
 import os
 
-import networkx as nx
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -10,41 +9,48 @@ from settings import DATA_PATH
 
 class GraphDataset(Dataset):
     def __init__(self, dataset, sampled, device=torch.device('cpu'), **kwargs):
-        self.G = nx.DiGraph()
-
-        with open(os.path.join(DATA_PATH, dataset,'{}.cites'.format(dataset)),
-                  'r') as edge_io:
-            while True:
-                line = edge_io.readline()
-                if not line:
-                    break
-
-                target, source = line.split('\t')
-                self.G.add_edge(source.strip(), target.strip())
-
+        content_list= list() 
+        id_list= list()
+        label_list = list()
+        
         with open(os.path.join(DATA_PATH, dataset, '{}.content'.format(dataset)),
                   'r') as content_io:
             while True:
                 line = content_io.readline()
-                if not line:
-                    break
-
+                if not line: break
                 id_, *content, label = line.split('\t')
-                self.G.nodes[id_]['x'] = torch.tensor([float(value) for value in content]).to(device)
-                self.G.nodes[id_]['z'] = self.G.nodes[id_]['x'].clone().to(device)
-                self.G.nodes[id_]['label'] = label.strip()
-
-        self.node_list = list(self.G.nodes())
-        if sampled:
-            from random import sample
-            for node in self.G.nodes():
-                if self.G.in_degree(node) > 1:
-                    chosen_edge = sample(list(self.G.in_edges(node)), k=1)[0]
-                    self.G.remove_edge(*chosen_edge)
-                    if list(nx.isolates(self.G)):
-                        self.G.add_edge(*chosen_edge)
+               
+                id_list.append(id_)
+                content = torch.tensor([float(value) for value in content]).to(device)
+                content_list.append(content)
+                label_list.append(label)
+        
+        self.X = torch.stack(content_list)
+        self.Z = self.X.clone()
+        label_set = list(set(label_list))
+        self.Y = [label_set.index(label) for label in label_list]
+        del label_set, label_list, content_list
+        self.A = torch.zeros(len(id_list), len(id_list)).to(device)
+        with open(os.path.join(DATA_PATH, dataset,'{}.cites'.format(dataset)),
+                  'r') as edge_io:
+            while True:
+                line = edge_io.readline()
+                if not line: break
+                target, source = line.split('\t')
+                target, source = id_list.index(target.strip()), id_list.index(source.strip())
+                self.A[target, source] = 1
+        self.S = torch.zeros(self.A.shape).to(device)
+        self.P = torch.zeros(self.A.shape).to(device)
+        # TODO: re work sampled case
+#        if sampled:
+#            from random import sample
+#            for node in self.G.nodes():
+#                if self.G.in_degree(node) > 1:
+#                    chosen_edge = sample(list(self.G.in_edges(node)), k=1)[0]
+#                    self.G.remove_edge(*chosen_edge)
+#                    if list(nx.isolates(self.G)):
+#                        self.G.add_edge(*chosen_edge)
     
-             
     def __getitem__(self, index):
         return self.Z[index]
 
@@ -58,20 +64,6 @@ class GraphDataset(Dataset):
     
     def z(self, key):
         return self.G.nodes[key]['z']
-    @property
-    def X(self):
-        return torch.stack(list(nx.get_node_attributes(self.G, 'x').values()))
-
-    @property
-    def Z(self):
-        return torch.stack(list(nx.get_node_attributes(self.G, 'z').values()))
-
-    @property
-    def Y(self):
-        labels = nx.get_node_attributes(self.G, 'label').values() 
-        label_set = list(set(labels))
-        labels = [label_set.index(label) for label in labels]
-        return torch.tensor(labels)
    
     @property
     def d(self):
@@ -86,7 +78,6 @@ class GraphDataset(Dataset):
         io = open(os.path.join(PICKLE_PATH, config.dataset, config.model_tag), 'wb')
         pickle.dump(self.Z.cpu().data.numpy(), io)
         io.close()
-        nx.write_gpickle(self.G, os.path.join(PICKLE_PATH, 'network', config.model_tag))
 
     def load(self, config):
         import pickle, os
