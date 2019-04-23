@@ -11,16 +11,13 @@ from settings import PICKLE_PATH, DATA_PATH
 class DataTransformer:
     def transform_out(self, src_model, src_path, output_model, output_path):
         import torch
-        import networkx as nx
         io = open(src_path, 'r')
         if output_model == 'cora':
             from dataset import CoraDataset
             dataset = CoraDataset()
-            if 'sampled' in output_path:
-                dataset.G = nx.read_gpickle(os.path.join(PICKLE_PATH, 'network', 'cora_X_sampled'))
         else:
             raise ValueError
-
+        
         if src_model == 'deepwalk' or src_model == 'node2vec':
             io.readline()
             while True:
@@ -28,15 +25,12 @@ class DataTransformer:
                 if not sample: break
                 node_id, *embedding = sample.split(' ')
                 embedding = torch.tensor(([float(val.strip()) for val in embedding]))
-                dataset.G.nodes[node_id]['z'] = embedding
+                dataset.set_embedding(node_id, embedding)
         else:
             raise ValueError
 
         io.close()
 
-        nx.write_gpickle(dataset.G, os.path.join(PICKLE_PATH, 'network', output_path))
-        for node_id in dataset.G.nodes(): 
-            dataset.G.nodes[node_id]['z'] = dataset.G.nodes[node_id]['z'].cpu()
         pickle.dump(dataset.Z.numpy(), open(os.path.join(DATA_PATH, output_path), 'wb'))
         
         

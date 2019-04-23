@@ -1,195 +1,232 @@
 import argparse
 import logging
 import os
-import pickle
 import pdb
+import pickle
 
-from networkx.classes.function import neighbors
-from networkx.classes.function import non_neighbors
-
+from numpy import inf
 from tensorboardX import SummaryWriter
 import torch
-from torch.distributions import Bernoulli
-from torch.nn import LogSoftmax
-from torch.nn import NLLLoss
-from torch.nn import BCELoss
-from torch.nn import functional as F
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset
 
 from dataset import CoraDataset, CiteseerDataset
-from helper import  normalize_elwise
+from experiment import node_classification
 from models import EdgeProbability
 from settings import PICKLE_PATH
            
 
-def main(config):
-    logging.basicConfig(format='[%(levelname)s] %(message)s',level=logging.DEBUG)
-    writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
-    
-    if torch.cuda.is_available():
-        device = torch.device('cuda:{}'.format(config.gpu))
-    else:
-        device = torch.device('cpu')
+parser = argparse.ArgumentParser()
+parser.add_argument('--dataset', type=str, default='cora')
+parser.add_argument('--deepwalk', action='store_true')
+parser.add_argument('--sampled', action='store_true')
+parser.add_argument('--gamma', type=float, default=0.74)
+parser.add_argument('--tolerence_Z', type=int, default=30)
+parser.add_argument('--sim_metric', type=str)
+parser.add_argument('--tolerence_P', type=int, default=30)
+parser.add_argument('--test_size', type=float, default=0.1)
+parser.add_argument('--lr', type=float, default=1e-4)
+parser.add_argument('--gpu', type=int, default=0)
+parser.add_argument('--model_tag', type=str, default='test')
+config = parser.parse_args()
+print(config)
 
-    logging.info('DEVICE \t %s', device)
+
+logging.basicConfig(format='[%(levelname)s] %(message)s',level=logging.DEBUG)
+writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
+
+device = torch.device('cuda:{}'.format(config.gpu))
+
+# -----------
+#   Graph
+# -----------
+graph = CoraDataset(device=device, sampled=config.sampled, deepwalk=config.deepwalk)
+
+# -----------
+#   Model
+# -----------
+if config.sim_metric == 'edgeprob':
+    prob_model = EdgeProbability(dim=graph.Z.shape[1]).to(device)
+
+    optimizer = torch.optim.Adam(
+            prob_model.parameters(), 
+            lr=config.lr)
+    lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True)
+
+context = {'iteration': 0,
+       'n_P': 0,
+       'n_Z': 0
+   }
+
+
+# ---------------
+#   Sim metric
+# ---------------
+if config.sim_metric == 'edgeprob':
+    sim_metric = prob_model.get_sims
+elif config.sim_metric == 'cosine':
+    sim_metric = lambda z,u: torch.nn.CosineSimilarity(dim=-1)(z,u).add(1).div(2)
+else:
+    raise ValueError
+
+
+@torch.no_grad()
+def update_embedding(graph, sim_metric, gamma, ):
+    prev_Z = graph.Z.clone()
+    for src in range(graph.Z.shape[0]):
+        nbrs = graph.nbrs(src)
+        if nbrs.shape[0] == 0: continue
+        sims = sim_metric(prev_Z[src], prev_Z[nbrs])
+        sims = sims.softmax(0)
+        graph.Z[src] = graph.X[src] + torch.matmul(sims, prev_Z[nbrs]).mul(gamma)
     
-    if config.dataset == 'cora':
-        network = CoraDataset(sampled=config.sampled, device=device)
-        if config.model_load is not None:
-            network.load(config)
+    return torch.norm(graph.Z - prev_Z, 1)
+
+
+def train_edge_prob_sgd(graph, model, optimizer):
+    train_cost, validation_cost = 0, 0
+    eps=1e-6
+    train_set, validation_set = graph.split(test_size=config.test_size)
+
+    Z = graph.Z
+    Z_elems = Z.flatten()
+    Z_mean = Z_elems.mean()
+    Z = Z.sub(Z_mean)
+
+    for src in train_set:
+        optimizer.zero_grad()
+        z = Z[src]
+        nbrs = graph.nbrs(src)
+        if nbrs.shape[0] == 0: continue
+        non_nbrs = graph.non_nbrs(src) 
+        pos_pair_probs = model(z, Z[nbrs])
+        pos_pair_probs = pos_pair_probs.where(
+                pos_pair_probs!=0, 
+                pos_pair_probs.new_full(pos_pair_probs.shape, eps)
+            )
+        pos_pair_loss = pos_pair_probs.log().neg().sum()
+
+        neg_pair_probs = model(z, Z[non_nbrs])
+        neg_pair_probs = neg_pair_probs.where(neg_pair_probs!=1, neg_pair_probs.new_full(neg_pair_probs.shape, eps))
+        neg_pair_loss = (1-neg_pair_probs).log().neg().sum()
+        
+        loss = pos_pair_loss + neg_pair_loss.div(non_nbrs.shape[0]).mul(nbrs.shape[0])
+        
+        if torch.isnan(loss): pdb.set_trace()
+        loss.backward()
+        train_cost += float(loss)
+        optimizer.step()
+
+    with torch.no_grad():
+        for src in validation_set:
+            z = Z[src]
+            nbrs = graph.nbrs(src)
+            if nbrs.shape[0] == 0: continue
+            non_nbrs = graph.non_nbrs(src) 
+            pos_pair_probs = model(z, Z[nbrs])
+            pos_pair_probs = pos_pair_probs.where(pos_pair_probs!=0, pos_pair_probs.new_full(pos_pair_probs.shape, eps))
+            pos_pair_loss = pos_pair_probs.log().neg().sum()
+
+            neg_pair_probs = model(z, Z[non_nbrs])
+            neg_pair_probs = neg_pair_probs.where(neg_pair_probs!=1, neg_pair_probs.new_full(neg_pair_probs.shape, eps))
+            neg_pair_loss = (1-neg_pair_probs).log().neg().sum()
             
-    elif config.dataset == 'citeseer':
-        network = CiteseerDataset(sampled=config.sampled, divce=device)
-    else:
-        raise ValueError
-    logging.info('DATASET \t %s', config.dataset)
+            loss = pos_pair_loss + neg_pair_loss.div(non_nbrs.shape[0]).mul(nbrs.shape[0])
+            validation_cost += float(loss) 
 
-    if config.sim_metric == 'cosine':
-        sim_metric = F.cosine_similarity
-    elif config.sim_metric == 'edge_prob':
-        if config.model_load is not None:
-            edge_prob_model = torch.load(os.path.join(PICKLE_PATH, 'models', 
-                        config.model_load))
-            checkpoint = torch.load(os.path.join(PICKLE_PATH, 'checkpoints',
-                        config.model_load))
-            iter_counter_updtP = checkpoint['iter_counter_updtP']
+    return train_cost, validation_cost
 
-        else:
-            edge_prob_model = EdgeProbability(dim=network.d).to(device)
-            iter_counter_updtP = 0
 
-        sim_metric = edge_prob_model.forward
-    else:
-        raise ValueError
+while True:
+    context['iteration'] += 1
 
-    iteration = -1
-    while True:
-        iteration += 1
+    # ----------
+    #   Model   
+    # ----------
+    if config.sim_metric == 'edge_prob':
+        minimum_validation_cost = inf
+        tolerence = config.tolerence_P
 
-        # Optimize Z
-        logging.info('ITERATION %d', iteration)
-        with torch.no_grad():
-            for epoch in range(1, config.epoch_Z+1):
-                prev_Z = network.Z.clone()
-                for v in network.G.nodes():
-                    nbrs = list(neighbors(network.G, v))
-                    if len(nbrs) == 0: continue
-                    
-                    nbrs_z = torch.stack([prev_Z[network.index(u)] for u in nbrs])
-                    sims = sim_metric(prev_Z[network.index(v)], nbrs_z, dim=-1) 
-                    sims = F.softmax(sims, dim=0)
-                    network.G.node[v]['z'] = network.G.nodes[v]['x'] \
-                                             + config.gamma * torch.mv(nbrs_z.t(), sims)
+        while tolerence != 0:
+            model_path = os.path.join(PICKLE_PATH, 'models', '{}_iter_{}'.format(config.model_tag, context['iteration']))
+            if os.path.exists(model_path):
+                break
+            context['n_P'] += 1
+            train_cost, validation_cost = train_edge_prob_sgd(
+                    graph, 
+                    prob_model, 
+                    optimizer
+                )
+            lr_scheduler.step(validation_cost)
 
-                distance = torch.norm(network.Z - prev_Z, 1)
-                print('optim Z {:d}/{:d} dist: {:.5f}'.format(epoch, config.epoch_Z, distance), end='\r')
-                writer.add_scalar('{}/distance'.format(config.model_tag), distance.item(), iteration * config.epoch_Z + epoch)
-                
-                if epoch % 100 == 0: network.save(config)
-                   
-            logging.info('optim Z %d/%d dist: %f', epoch, config.epoch_Z, distance)
-
-        if config.sim_metric == 'edge_prob':
-            # Update params
-            optimizer = torch.optim.Adam(
-                    edge_prob_model.parameters(), 
-                    lr=config.lr,
+            if minimum_validation_cost > validation_cost:
+                tolerence = config.tolerence_P
+                minimum_validation_cost = validation_cost
+                torch.save(prob_model, 
+                    os.path.join(PICKLE_PATH, 'models', 
+                                 '{}_iter_{}_temp'.format(config.model_tag, context['iteration'])
+                                ),
                     )
+            else:
+                tolerence -= 1
+            
+            # log stats
+            writer.add_scalars('{}/{}'.format(config.model_tag, 'model_cost'),
+                    {'train cost': train_cost,
+                     'validation cost': validation_cost * 9},
+                    context['n_P'] 
+                )
 
-            for epoch in range(1,config.epoch_P+1):
-                cost = 0
-                loader = DataLoader(list(network.G.nodes()),
-                                    batch_size=config.batch_size,
-                                    shuffle=True)
-                for batch_idx, batch in enumerate(loader):
-                    optimizer.zero_grad()
-                    indices = [network.index(v) for v in batch]
-                    batch_z = network.Z[indices]
+        # Load best model
+        prob_model = torch.load(
+                os.path.join(PICKLE_PATH, 'models', 
+                             '{}_iter_{}_temp'.format(config.model_tag, context['iteration'])),
+                map_location=device,
+            )
 
-                    # nbrs
-                    batch_nbrs = [list(neighbors(network.G, v)) for v in batch]
-                    number_of_nbrs = [len(nbr) for nbr in batch_nbrs]
-                    batch_nbrs_z = torch.Tensor().to(device)
-                    for batch_nbr in batch_nbrs:
-                        if batch_nbr:
-                            nbr_z = torch.stack([network.z(u) for u in batch_nbr])
-                            while nbr_z.shape[0] < max(number_of_nbrs):
-                                nbr_z = torch.cat([nbr_z, torch.zeros(1, network.d).to(device)])
-                            nbr_z = nbr_z.unsqueeze(0)
-                        else:
-                            nbr_z = torch.zeros(1, max(number_of_nbrs), network.d).to(device)
+        torch.save(prob_model, 
+            os.path.join(PICKLE_PATH, 'models', 
+                         '{}_iter_{}'.format(config.model_tag, context['iteration'])
+                        ),
+            )
+        sim_metric = prob_model.get_sims
 
-                        batch_nbrs_z = torch.cat([batch_nbrs_z, nbr_z])
-                    batch_z.requires_grad_(True)
-                    batch_nbrs_z.requires_grad_(True)
+    # ----------
+    #   Embed   
+    # ----------
+        
+    minimum_dist = inf
+    tolerence = config.tolerence_Z
+    
+    while tolerence != 0:
+        embedding_path = os.path.join(PICKLE_PATH, config.dataset, '{}_iter_{}'.format(config.model_tag, context['iteration']))
+        if os.path.exists(embedding_path):
+            Z = torch.tensor(pickle.load(open(embedding_path, 'rb'))).to(device)
+            graph.Z = Z
+            break
+        context['n_Z'] += 1
+        dist = update_embedding(graph, 
+                sim_metric, 
+                config.gamma, 
+            )
+        
+        if minimum_dist > dist:
+            tolerence = config.tolerence_Z
+            minimum_dist = dist
+        else:
+            tolerence -= 1
 
-                    probs = edge_prob_model(batch_z, batch_nbrs_z)
-                    mask = torch.zeros(probs.shape).to(device)
-                    for i, number in enumerate(number_of_nbrs):
-                        for j in range(number):
-                            mask[i,j] = 1
-                    probs = torch.where(mask>0, probs.log().neg(), torch.tensor([0.]).to(device))
-                    edge_pair_loss = probs.sum()
-                    
-                    # non nbrs
-                    batch_non_nbrs = [list(non_neighbors(network.G, v)) for v in batch]
-                    number_of_non_nbrs = [len(nbr) for nbr in batch_non_nbrs]
-                    batch_non_nbrs_z = torch.Tensor().to(device)
+        # log stats
+        writer.add_scalars('{}/{}'.format(config.model_tag, 'embedding'),
+                {'dist': dist},
+                context['n_Z'] 
+            )
 
-                    for batch_non_nbr in batch_non_nbrs:
-                        indices = [network.index(u) for u in batch_non_nbr]
-                        non_nbr_z = network.Z[indices]
-                        # non_nbr_z = torch.stack([network.G.nodes[u]['z'] for u in batch_non_nbr])
-                        while non_nbr_z.shape[0] < max(number_of_non_nbrs):
-                            non_nbr_z = torch.cat([non_nbr_z, torch.zeros(1, network.d).to(device)])
-                        non_nbr_z = non_nbr_z.unsqueeze(0)
-                        batch_non_nbrs_z = torch.cat([batch_non_nbrs_z, non_nbr_z])
+    # Save embedding
+    pickle.dump(graph.Z.cpu().numpy(),
+            open(os.path.join(PICKLE_PATH, config.dataset, 
+                '{}_iter_{}'.format(config.model_tag, context['iteration'])), 'wb'),
+        )
 
-                    batch_non_nbrs_z.requires_grad_(True)
+    if config.sim_metric == 'cosine': break
 
-                    probs = edge_prob_model(batch_z, batch_non_nbrs_z)
-                    neg_probs = 1-probs
-                    mask = torch.zeros(probs.shape).to(device)
-                    for i, number in enumerate(number_of_non_nbrs):
-                        for j in range(number):
-                            mask[i,j] = 1
-                    sample_mask = neg_probs.bernoulli()
-                    neg_probs = neg_probs.log().neg()
-                    neg_probs = torch.where(sample_mask * mask > 0, neg_probs, torch.tensor([0.]).to(device))
-                    non_edge_pair_loss = neg_probs.sum()
-
-                    loss = (edge_pair_loss + non_edge_pair_loss) / config.batch_size
-
-                    cost += float(loss)
-                    loss.backward()
-                    optimizer.step()
-                    print('Upd P {}/{} ({:.2f}%) cost: {:.4f}'.format(epoch, config.epoch_P, 100*(batch_idx*config.batch_size + len(batch))/len(network), cost),end='\r')
-                logging.info('Upd P %d/%d cost: %f', epoch, config.epoch_P, cost)
-                writer.add_scalar('{}/cost'.format(config.model_tag), 
-                                  cost, iteration * config.epoch_P + epoch)
-
-            torch.save(edge_prob_model,os.path.join(
-                        PICKLE_PATH, 'models', config.model_tag))
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str)
-    parser.add_argument('--sampled', action='store_true')
-
-    parser.add_argument('--gamma', type=float, default=0.5)
-    parser.add_argument('--epoch_Z', type=int)
-
-    parser.add_argument('--sim_metric', type=str)
-
-    parser.add_argument('--epoch_P', type=int)
-    parser.add_argument('--batch_size', type=int)
-     
-    parser.add_argument('--lr', type=float, default=0.0001)
-
-    parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--model_tag', type=str, default='test')
-    parser.add_argument('--model_load', type=str)
-    config = parser.parse_args()
-    print(config)
-    main(config)
