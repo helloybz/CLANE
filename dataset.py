@@ -25,7 +25,7 @@ class GraphDataset(Dataset):
                 content_list.append(content)
                 label_list.append(label)
         
-        if kwargs['deepwalk']:
+        if 'deepwalk' in kwargs.keys() and kwargs['deepwalk']:
             import pickle
             deepwalk = pickle.load(open(os.path.join(PICKLE_PATH, dataset, '{}_deepwalk'.format(dataset)), 'rb'))
             self.X = torch.tensor(deepwalk).to(device)
@@ -43,13 +43,17 @@ class GraphDataset(Dataset):
                 line = edge_io.readline()
                 if not line: break
                 target, source = line.split('\t')
-                target, source = self.id_list.index(target.strip()), self.id_list.index(source.strip())
-                self.A[source, target] = 1
+                try:
+                    target, source = self.id_list.index(target.strip()), self.id_list.index(source.strip())
+                    self.A[source, target] = 1
+                except ValueError:
+                    pass
         self.A = self.A - torch.eye(len(self.id_list)).to(device)
+        self.edges = (self.A==1).nonzero()
+
         self.S = torch.zeros(self.A.shape).to(device)
 
         self.batch_norm = torch.nn.BatchNorm1d(num_features=self.Z.shape[-1], affine=False).to(device)
-        # TODO: re work sampled case
         if sampled:
             sampled_link = open(
                     os.path.join(DATA_PATH, dataset, '{}_sampled.cites'.format(dataset))
@@ -61,13 +65,13 @@ class GraphDataset(Dataset):
                     self.A[self.id_list.index(src), self.id_list.index(dst)] = 1
             
     def __getitem__(self, index):
-        return self.Z[index]
+        return self.Z[index], self.Z[self.out_nbrs(index)], self.Z[self.non_nbrs(index)]
 
     def split(self, test_size):
         return train_test_split(list(range(len(self.id_list))), test_size=test_size)
         
     def __len__(self):
-        return nx.number_of_nodes(self.G)
+        return self.X.shape[0]
 
     def set_embedding(self, id_, embedding):
         idx = self.id_list.index(id_)
@@ -77,9 +81,12 @@ class GraphDataset(Dataset):
     def normalized_Z(self):
         return self.batch_norm(self.Z) 
 
-    def nbrs(self, index):
+    def out_nbrs(self, index):
         return (self.A[index] == 1).nonzero().squeeze(-1)
     
+    def in_nbrs(self, index):
+        return (self.A.t()[index] == 1).nonzero().squeeze(-1)
+
     def non_nbrs(self, index):
         return (self.A[index] == 0).nonzero().squeeze(-1)
     @property
@@ -117,3 +124,6 @@ class CiteseerDataset(GraphDataset):
         super(CiteseerDataset, self).__init__('citeseer', sampled, **kwargs)
 
 
+if __name__ == "__main__":
+    graph = CiteseerDataset()
+    import pdb;    pdb.set_trace()

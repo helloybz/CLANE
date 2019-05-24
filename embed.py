@@ -1,5 +1,4 @@
 import argparse
-import logging
 import os
 import pdb
 import pickle
@@ -24,209 +23,199 @@ parser.add_argument('--gamma', type=float, default=0.74)
 parser.add_argument('--tolerence_Z', type=int, default=30)
 parser.add_argument('--sim_metric', type=str)
 parser.add_argument('--tolerence_P', type=int, default=30)
-parser.add_argument('--test_size', type=float, default=0.1)
+parser.add_argument('--valid_size', type=float, default=0.1)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--model_tag', type=str, default='test')
-config = parser.parse_args()
-print(config)
-
-
-logging.basicConfig(format='[%(levelname)s] %(message)s',level=logging.DEBUG)
-writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
-
-device = torch.device('cuda:{}'.format(config.gpu))
-
-# -----------
-#   Graph
-# -----------
-graph = CoraDataset(device=device, sampled=config.sampled, deepwalk=config.deepwalk)
-
-# -----------
-#   Model
-# -----------
-if config.sim_metric == 'edgeprob':
-    prob_model = EdgeProbability(dim=graph.Z.shape[1]).to(device)
-
-    optimizer = torch.optim.Adam(
-            prob_model.parameters(), 
-            lr=config.lr)
-    lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True)
-
-context = {'iteration': 0,
-       'n_P': 0,
-       'n_Z': 0
-   }
-
-
-# ---------------
-#   Sim metric
-# ---------------
-if config.sim_metric == 'edgeprob':
-    sim_metric = prob_model.get_sims
-elif config.sim_metric == 'cosine':
-    sim_metric = lambda z,u: torch.nn.CosineSimilarity(dim=-1)(z,u).add(1).div(2)
-else:
-    raise ValueError
 
 
 @torch.no_grad()
-def update_embedding(graph, sim_metric, gamma, ):
+def update_embedding(graph, sim_metric, gamma):
     prev_Z = graph.Z.clone()
     for src in range(graph.Z.shape[0]):
-        nbrs = graph.nbrs(src)
+        nbrs = graph.out_nbrs(src)
         if nbrs.shape[0] == 0: continue
-        sims = sim_metric(prev_Z[src], prev_Z[nbrs])
-        sims = sims.softmax(0)
+        sims = sim_metric(prev_Z[src], prev_Z[nbrs]).sigmoid().softmax(0)
         graph.Z[src] = graph.X[src] + torch.matmul(sims, prev_Z[nbrs]).mul(gamma)
     
     return torch.norm(graph.Z - prev_Z, 1)
 
 
-def train_edge_prob_sgd(graph, model, optimizer):
-    train_cost, validation_cost = 0, 0
+def train_epoch(model, train_loader, optimizer):
+    model.train()
     eps=1e-6
-    train_set, validation_set = graph.split(test_size=config.test_size)
+    train_cost = 0
 
-    Z = graph.Z
-    Z_elems = Z.flatten()
-    Z_mean = Z_elems.mean()
-    Z = Z.sub(Z_mean)
+    for batch_idx, (z_src, z_pos, z_neg) in enumerate(train_loader):
 
-    for src in train_set:
         optimizer.zero_grad()
-        z = Z[src]
-        nbrs = graph.nbrs(src)
-        if nbrs.shape[0] == 0: continue
-        non_nbrs = graph.non_nbrs(src) 
-        pos_pair_probs = model(z, Z[nbrs])
-        pos_pair_probs = pos_pair_probs.where(
-                pos_pair_probs!=0, 
-                pos_pair_probs.new_full(pos_pair_probs.shape, eps)
-            )
-        pos_pair_loss = pos_pair_probs.log().neg().sum()
+        if z_pos.shape[1] == 0: continue
+        pos_probs = model(z_src, z_pos) 
+        neg_probs = model(z_src, z_neg)
 
-        neg_pair_probs = model(z, Z[non_nbrs])
-        neg_pair_probs = neg_pair_probs.where(neg_pair_probs!=1, neg_pair_probs.new_full(neg_pair_probs.shape, eps))
-        neg_pair_loss = (1-neg_pair_probs).log().neg().sum()
-        
-        loss = pos_pair_loss + neg_pair_loss.div(non_nbrs.shape[0]).mul(nbrs.shape[0])
-        
-        if torch.isnan(loss): pdb.set_trace()
-        loss.backward()
-        train_cost += float(loss)
+        pos_loss = pos_probs.where(
+                pos_probs!=0, 
+                pos_probs.new_full(pos_probs.shape, eps)
+            ).log().neg().sum()
+        neg_loss = (1-neg_probs.where(
+                neg_probs!=1, 
+                neg_probs.new_full(neg_probs.shape, eps)
+            )).log().neg().sum()
+
+        total_loss = pos_loss + neg_loss.div(z_neg.shape[1]).mul(z_pos.shape[1])
+
+        total_loss.backward()
         optimizer.step()
+        train_cost += total_loss.item()
+    return train_cost
 
-    with torch.no_grad():
-        for src in validation_set:
-            z = Z[src]
-            nbrs = graph.nbrs(src)
-            if nbrs.shape[0] == 0: continue
-            non_nbrs = graph.non_nbrs(src) 
-            pos_pair_probs = model(z, Z[nbrs])
-            pos_pair_probs = pos_pair_probs.where(pos_pair_probs!=0, pos_pair_probs.new_full(pos_pair_probs.shape, eps))
-            pos_pair_loss = pos_pair_probs.log().neg().sum()
+@torch.no_grad()
+def valid_epoch(model, valid_loader):
+    model.eval()
+    eps=1e-6
 
-            neg_pair_probs = model(z, Z[non_nbrs])
-            neg_pair_probs = neg_pair_probs.where(neg_pair_probs!=1, neg_pair_probs.new_full(neg_pair_probs.shape, eps))
-            neg_pair_loss = (1-neg_pair_probs).log().neg().sum()
-            
-            loss = pos_pair_loss + neg_pair_loss.div(non_nbrs.shape[0]).mul(nbrs.shape[0])
-            validation_cost += float(loss) 
+    valid_cost = 0
 
-    return train_cost, validation_cost
+    for batch_idx, (z_src, z_pos, z_neg) in enumerate(valid_loader):
+        if z_pos.shape[1] == 0: continue
+        pos_probs = model(z_src, z_pos) 
+        neg_probs = model(z_src, z_neg)
 
+        pos_loss = pos_probs.where(
+                pos_probs!=0, 
+                pos_probs.new_full(pos_probs.shape, eps)
+            ).log().neg().sum()
+        neg_loss = (1-neg_probs.where(
+                neg_probs!=1, 
+                neg_probs.new_full(neg_probs.shape, eps)
+            )).log().neg().sum()
 
-while True:
-    context['iteration'] += 1
-
-    # ----------
-    #   Model   
-    # ----------
-    if config.sim_metric == 'edge_prob':
-        minimum_validation_cost = inf
-        tolerence = config.tolerence_P
-
-        while tolerence != 0:
-            model_path = os.path.join(PICKLE_PATH, 'models', '{}_iter_{}'.format(config.model_tag, context['iteration']))
-            if os.path.exists(model_path):
-                break
-            context['n_P'] += 1
-            train_cost, validation_cost = train_edge_prob_sgd(
-                    graph, 
-                    prob_model, 
-                    optimizer
-                )
-            lr_scheduler.step(validation_cost)
-
-            if minimum_validation_cost > validation_cost:
-                tolerence = config.tolerence_P
-                minimum_validation_cost = validation_cost
-                torch.save(prob_model, 
-                    os.path.join(PICKLE_PATH, 'models', 
-                                 '{}_iter_{}_temp'.format(config.model_tag, context['iteration'])
-                                ),
-                    )
-            else:
-                tolerence -= 1
-            
-            # log stats
-            writer.add_scalars('{}/{}'.format(config.model_tag, 'model_cost'),
-                    {'train cost': train_cost,
-                     'validation cost': validation_cost * 9},
-                    context['n_P'] 
-                )
-
-        # Load best model
-        prob_model = torch.load(
-                os.path.join(PICKLE_PATH, 'models', 
-                             '{}_iter_{}_temp'.format(config.model_tag, context['iteration'])),
-                map_location=device,
-            )
-
-        torch.save(prob_model, 
-            os.path.join(PICKLE_PATH, 'models', 
-                         '{}_iter_{}'.format(config.model_tag, context['iteration'])
-                        ),
-            )
-        sim_metric = prob_model.get_sims
-
-    # ----------
-    #   Embed   
-    # ----------
-        
-    minimum_dist = inf
-    tolerence = config.tolerence_Z
+        total_loss = pos_loss + neg_loss.div(z_neg.shape[1]).mul(z_pos.shape[1])
+        valid_cost += total_loss.item()
     
-    while tolerence != 0:
-        embedding_path = os.path.join(PICKLE_PATH, config.dataset, '{}_iter_{}'.format(config.model_tag, context['iteration']))
-        if os.path.exists(embedding_path):
-            Z = torch.tensor(pickle.load(open(embedding_path, 'rb'))).to(device)
-            graph.Z = Z
-            break
-        context['n_Z'] += 1
-        dist = update_embedding(graph, 
-                sim_metric, 
-                config.gamma, 
-            )
-        
-        if minimum_dist > dist:
-            tolerence = config.tolerence_Z
-            minimum_dist = dist
-        else:
-            tolerence -= 1
+    return valid_cost
 
-        # log stats
-        writer.add_scalars('{}/{}'.format(config.model_tag, 'embedding'),
-                {'dist': dist},
-                context['n_Z'] 
-            )
+if __name__ == '__main__':
+    config = parser.parse_args()
+    print(config)
 
-    # Save embedding
-    pickle.dump(graph.Z.cpu().numpy(),
-            open(os.path.join(PICKLE_PATH, config.dataset, 
-                '{}_iter_{}'.format(config.model_tag, context['iteration'])), 'wb'),
-        )
+    iterative = config.sim_metric == 'edgeprob'
+    device = torch.device('cuda:{}'.format(config.gpu))
+    writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
+    eps=1e-6
+   
+    if config.dataset == 'cora':
+        graph = CoraDataset(device=device, sampled=config.sampled, deepwalk=config.deepwalk)
+    elif config.dataset == 'citeseer':
+        graph = CiteseerDataset(device=device, sampled=config.sampled, deepwalk=config.deepwalk)
+      
+    num_valid = int(config.valid_size * len(graph))
+    num_train = len(graph)-num_valid
+   
+    model = EdgeProbability(dim=graph.Z.shape[1]).to(device)
 
-    if config.sim_metric == 'cosine': break
+    context = {'iteration': 0,
+            'n_P': 0,
+            'n_Z': 0
+        }
+
+    while True:
+        context['iteration'] += 1
+
+        tolerence = config.tolerence_P
+        min_valid_cost = inf
+
+        try:
+            model = torch.load(
+                    os.path.join(
+                            PICKLE_PATH, 'models',
+                            f'{config.model_tag}_iter_{context["iteration"]}'),
+                    map_location=device
+                )
+        except:
+            while True:
+                
+                context['n_P'] += 1
+
+                train_set, valid_set = torch.utils.data.random_split(
+                        graph, [num_train, num_valid]
+                    )
+                train_loader = DataLoader(
+                        train_set,
+                        shuffle=True)
+
+                valid_loader = DataLoader(
+                        valid_set,
+                        shuffle=True)
+
+                optimizer = torch.optim.Adam(
+                        model.parameters(), 
+                        lr=config.lr)
+                lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True)
+                train_cost = train_epoch(model, train_loader, optimizer)
+                valid_cost = valid_epoch(model, valid_loader)
+                
+                lr_scheduler.step(valid_cost)
+                
+                if min_valid_cost > valid_cost:
+                    min_valid_cost = valid_cost
+                    tolerence = config.tolerence_P
+                    torch.save(model,
+                            os.path.join(PICKLE_PATH, 'models', f'{config.model_tag}_iter_{context["iteration"]}_temp'))
+                else:
+                    tolerence -= 1
+
+                writer.add_scalars(f'{config.model_tag}/{"model_training"}',
+                        {'train_cost': train_cost, 
+                         'valid_cost': valid_cost*9},
+                        context['n_P'] 
+                    )
+                print(f'[MODEL TRAINING] {train_cost:5.5} {valid_cost:5.5} tol: {tolerence}                ', end='\r')
+                if tolerence == 0: 
+                    model = torch.load(
+                            os.path.join(PICKLE_PATH, 'models', 
+                                    f'{config.model_tag}_iter_{context["iteration"]}_temp'
+                            ),
+                            map_location=device
+                        )
+                    torch.save(model,
+                            os.path.join(PICKLE_PATH, 'models', f'{config.model_tag}_iter_{context["iteration"]}'))
+                    print(f'[MODEL TRAINING] {train_cost:5.5} {valid_cost:5.5} tol: {tolerence}')
+                    break
+
+        pdb.set_trace()
+        tolerence = config.tolerence_Z
+        min_distance = inf
+        try:
+            graph.Z = torch.tensor(pickle.load(open(
+                    os.path.join(
+                            PICKLE_PATH, 'embedding',
+                            f'{config.model_tag}_iter_{context["iteration"]}'),
+                    'rb')
+                )).to(device)
+            
+        except:
+            while True:
+                context['n_Z'] += 1
+                distance = update_embedding(graph, model.get_sims, config.gamma)
+                
+                if min_distance > distance:
+                    min_distance = distance
+                    tolerence = config.tolerence_Z
+                else:
+                    tolerence -= 1
+                print(f'[EMBEDDING] {min_distance:5.5} tol:{tolerence}               ', end='\r')
+                writer.add_scalars(f'{config.model_tag}/{"embedding"}',
+                        {'dist': distance},
+                        context['n_Z'] 
+                    )
+                if tolerence == 0: 
+                    pickle.dump(
+                            graph.Z.cpu().numpy(),
+                            open(os.path.join(PICKLE_PATH, 'embedding', 
+                                    f'{config.model_tag}_iter_{context["iteration"]}'
+                                ), 'wb'))
+
+                    print(f'[EMBEDDING] {min_distance:5.5}')
+                    break
 
