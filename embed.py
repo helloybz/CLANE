@@ -56,7 +56,7 @@ def train_epoch(model, train_loader, optimizer, approximated=False):
 
         pos_loss = pos_probs.where(
                 pos_probs!=0, 
-                pos_probs.new_full(pos_probs.shape, eps)
+                torch.ones(pos_probs.shape, device=device).mul(eps)
             ).log().neg().sum()
         if approximated:
             neg_probs = neg_probs.where(
@@ -65,7 +65,7 @@ def train_epoch(model, train_loader, optimizer, approximated=False):
             )
         neg_loss = (1-neg_probs.where(
                 neg_probs!=1, 
-                neg_probs.new_full(neg_probs.shape, eps, device=device)
+                torch.ones(neg_probs.shape, device=device).mul(eps)
             )).log().neg().sum()
 
         total_loss = pos_loss + neg_loss.div(z_neg.shape[1]).mul(z_pos.shape[1])

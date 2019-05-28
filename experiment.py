@@ -3,7 +3,6 @@ import glob
 import os
 import pickle
 
-import networkx as nx 
 from scipy.spatial.distance import cosine
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.model_selection import train_test_split
@@ -12,11 +11,14 @@ from sklearn.metrics import roc_auc_score
 from torch import device
 import torch
 
-from dataset import CoraDataset
+from dataset import CoraDataset, CiteseerDataset
 from settings import DATA_PATH
 from settings import PICKLE_PATH
 
-DATASET_MAP = {'cora':CoraDataset}
+DATASET_MAP = {
+    'cora':CoraDataset,
+    'citeseer':CiteseerDataset
+    }
 
 
 def node_classification(embeddings, labels, test_size, name, **kwargs):
