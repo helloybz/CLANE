@@ -22,6 +22,8 @@ parser.add_argument('--sampled', action='store_true')
 parser.add_argument('--gamma', type=float, default=0.74)
 parser.add_argument('--tolerence_Z', type=int, default=30)
 parser.add_argument('--sim_metric', type=str)
+parser.add_argument('--approximated', action='store_true')
+
 parser.add_argument('--tolerence_P', type=int, default=30)
 parser.add_argument('--valid_size', type=float, default=0.1)
 parser.add_argument('--lr', type=float, default=1e-4)
@@ -41,13 +43,12 @@ def update_embedding(graph, sim_metric, gamma):
     return torch.norm(graph.Z - prev_Z, 1)
 
 
-def train_epoch(model, train_loader, optimizer):
+def train_epoch(model, train_loader, optimizer, approximated=False):
     model.train()
     eps=1e-6
     train_cost = 0
 
-    for batch_idx, (z_src, z_pos, z_neg) in enumerate(train_loader):
-
+    for z_src, z_pos, z_neg in train_loader:
         optimizer.zero_grad()
         if z_pos.shape[1] == 0: continue
         pos_probs = model(z_src, z_pos) 
@@ -57,9 +58,14 @@ def train_epoch(model, train_loader, optimizer):
                 pos_probs!=0, 
                 pos_probs.new_full(pos_probs.shape, eps)
             ).log().neg().sum()
+        if approximated:
+            neg_probs = neg_probs.where(
+                    neg_probs.bernoulli()!=1,
+                    torch.zeros(neg_probs.shape, device=device)
+            )
         neg_loss = (1-neg_probs.where(
                 neg_probs!=1, 
-                neg_probs.new_full(neg_probs.shape, eps)
+                neg_probs.new_full(neg_probs.shape, eps, device=device)
             )).log().neg().sum()
 
         total_loss = pos_loss + neg_loss.div(z_neg.shape[1]).mul(z_pos.shape[1])
@@ -101,6 +107,7 @@ if __name__ == '__main__':
 
     iterative = config.sim_metric == 'edgeprob'
     device = torch.device('cuda:{}'.format(config.gpu))
+    approximated = config.approximated
     writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
     eps=1e-6
    
@@ -113,7 +120,10 @@ if __name__ == '__main__':
     num_train = len(graph)-num_valid
    
     model = EdgeProbability(dim=graph.Z.shape[1]).to(device)
-
+    optimizer = torch.optim.Adam(
+            model.parameters(), 
+            lr=config.lr)
+    lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True)
     context = {'iteration': 0,
             'n_P': 0,
             'n_Z': 0
@@ -148,11 +158,7 @@ if __name__ == '__main__':
                         valid_set,
                         shuffle=True)
 
-                optimizer = torch.optim.Adam(
-                        model.parameters(), 
-                        lr=config.lr)
-                lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True)
-                train_cost = train_epoch(model, train_loader, optimizer)
+                train_cost = train_epoch(model, train_loader, optimizer, approximated)
                 valid_cost = valid_epoch(model, valid_loader)
                 
                 lr_scheduler.step(valid_cost)
