@@ -19,10 +19,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='cora')
 parser.add_argument('--deepwalk', action='store_true')
 parser.add_argument('--sampled', action='store_true')
-parser.add_argument('--gamma', type=float, default=0.74)
+
 parser.add_argument('--tolerence_Z', type=int, default=30)
 parser.add_argument('--sim_metric', type=str)
 parser.add_argument('--approximated', action='store_true')
+parser.add_argument('--gamma', type=float, default=0.74)
+parser.add_argument('--in_nbrs', action='store_true')
+parser.add_argument('--out_nbrs', action='store_true')
 
 parser.add_argument('--tolerence_P', type=int, default=30)
 parser.add_argument('--valid_size', type=float, default=0.1)
@@ -32,12 +35,22 @@ parser.add_argument('--model_tag', type=str, default='test')
 
 
 @torch.no_grad()
-def update_embedding(graph, sim_metric, gamma):
+def update_embedding(graph, sim_metric, gamma, in_nbrs_=False, out_nbrs_=False):
     prev_Z = graph.Z.clone()
+
     for src in range(graph.Z.shape[0]):
-        nbrs = graph.out_nbrs(src)
-        if nbrs.shape[0] == 0: continue
-        sims = sim_metric(prev_Z[src], prev_Z[nbrs]).sigmoid().softmax(0)
+        nbrs,sims = [], []
+        if in_nbrs_:
+            in_nbrs = graph.in_nbrs(src)
+            nbrs.append(in_nbrs)
+            sims.append(sim_metric(prev_Z[in_nbrs], prev_Z[src]))
+        if out_nbrs_:
+            out_nbrs = graph.out_nbrs(src)
+            nbrs.append(out_nbrs)
+            sims.append(sim_metric(prev_Z[src], prev_Z[out_nbrs]))
+        
+        sims = torch.cat(sims).softmax(0)
+        nbrs = torch.cat(nbrs)
         graph.Z[src] = graph.X[src] + torch.matmul(sims, prev_Z[nbrs]).mul(gamma)
     
     return torch.norm(graph.Z - prev_Z, 1)
@@ -120,10 +133,6 @@ if __name__ == '__main__':
     num_train = len(graph)-num_valid
    
     model = EdgeProbability(dim=graph.Z.shape[1]).to(device)
-    optimizer = torch.optim.Adam(
-            model.parameters(), 
-            lr=config.lr)
-    lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True)
     context = {'iteration': 0,
             'n_P': 0,
             'n_Z': 0
@@ -135,6 +144,10 @@ if __name__ == '__main__':
         tolerence = config.tolerence_P
         min_valid_cost = inf
 
+        optimizer = torch.optim.Adam(
+                model.parameters(), 
+                lr=config.lr)
+        lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True)
         try:
             model = torch.load(
                     os.path.join(
@@ -203,7 +216,7 @@ if __name__ == '__main__':
         except:
             while True:
                 context['n_Z'] += 1
-                distance = update_embedding(graph, model.get_sims, config.gamma)
+                distance = update_embedding(graph, model.get_sims, config.gamma, in_nbrs_=config.in_nbrs, out_nbrs_=config.out_nbrs)
                 
                 if min_distance > distance:
                     min_distance = distance

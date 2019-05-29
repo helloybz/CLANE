@@ -17,12 +17,11 @@ class EdgeProbability(nn.Module):
         Bdst = self.B(z_dst).unsqueeze(-1)
         return torch.matmul(Asrc,Bdst).sigmoid().view(-1)
 
-    def get_sims(self, z, U):
-        Az = self.A(z) # (d) * (d x d) = (d)
-        BU = self.B(U) # (|N| x d) * (d x d) = (|N| x d)
-        output = BU.mv(Az) # (|N| x d) = (|N|)
-         
-        return output
+    def get_sims(self, z_src, z_dst):
+        Asrc = self.A(z_src).unsqueeze(-2)
+        Bdst = self.B(z_dst).unsqueeze(-1)
+        output = torch.matmul(Asrc, Bdst)
+        return output.view(-1)
 
 
 if __name__ == "__main__":

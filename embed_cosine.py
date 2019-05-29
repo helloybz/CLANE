@@ -19,6 +19,8 @@ parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--gamma', type=float, default=0.74)
 parser.add_argument('--tolerence_Z', type=int, default=30)
 parser.add_argument('--model_tag', type=str)
+parser.add_argument('--in_nbrs', action='store_true')
+parser.add_argument('--out_nbrs', action='store_true')
 config = parser.parse_args()
 
 
@@ -32,18 +34,20 @@ if __name__ == "__main__":
     elif config.dataset == 'citeseer':
         graph = CiteseerDataset(device=device)
 
+    
     sim_metric = lambda x,y: F.cosine_similarity(x,y,dim=-1)
 
     min_distance = inf
     tolerence = tolerence_Z
     while tolerence != 0:
-        distance = update_embedding(graph, sim_metric, gamma)
+        distance = update_embedding(graph, sim_metric, gamma, in_nbrs_=config.in_nbrs, out_nbrs_=config.out_nbrs)
 
         if min_distance > distance:
             min_distance = distance
             tolerence = tolerence_Z
         else:
             tolerence -= 1
-
+        
+        print(distance,end='\r')
     pickle.dump(graph.Z.cpu().numpy(), open(os.path.join(PICKLE_PATH, 'embedding', config.model_tag),'wb'))
-
+    

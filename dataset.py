@@ -86,6 +86,9 @@ class GraphDataset(Dataset):
     
     def in_nbrs(self, index):
         return (self.A.t()[index] == 1).nonzero().squeeze(-1)
+    
+    def nbrs(self, index):
+        return torch.cat([self.out_nbrs(index), self.in_nbrs(index)])
 
     def non_nbrs(self, index):
         return (self.A[index] == 0).nonzero().squeeze(-1)
