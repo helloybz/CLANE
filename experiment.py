@@ -4,7 +4,7 @@ import os
 import pickle
 
 from scipy.spatial.distance import cosine
-from sklearn.linear_model import LogisticRegressionCV
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 from sklearn.metrics import roc_auc_score
@@ -28,14 +28,18 @@ def node_classification(embeddings, labels, test_size, name, **kwargs):
     result['macro_f1'] = list()
     
     # split dataset
-    train_X, test_X, train_Y, test_Y = train_test_split(embeddings, labels, test_size=test_size, random_state=0)
-    
-    classifier = LogisticRegressionCV(cv=5, random_state=0, solver='lbfgs', multi_class='multinomial', max_iter=1000000)
-    classifier.fit(train_X, train_Y)
-    pred = classifier.predict(test_X)
-    
-    result['micro_f1'] = f1_score(pred, test_Y, average='micro')
-    result['macro_f1'] = f1_score(pred, test_Y, average='macro')
+    for i in range(10):
+        train_X, test_X, train_Y, test_Y = train_test_split(embeddings, labels, test_size=test_size)
+          
+        classifier = LogisticRegression(solver='lbfgs', multi_class='multinomial', max_iter=1000000, n_jobs=4)
+        classifier.fit(train_X, train_Y)
+        pred = classifier.predict(test_X)
+
+        result['micro_f1'].append(f1_score(pred, test_Y, average='micro'))
+        result['macro_f1'].append(f1_score(pred, test_Y, average='macro'))
+
+    result['micro_f1'] = sum(result['micro_f1'])/10
+    result['macro_f1'] = sum(result['macro_f1'])/10
     
     return result
 
