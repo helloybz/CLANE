@@ -39,17 +39,21 @@ def update_embedding(graph, sim_metric, gamma, in_nbrs_=False, out_nbrs_=False):
     prev_Z = graph.Z.clone()
 
     for src in range(graph.Z.shape[0]):
-        nbrs,sims = [], []
+        nbrs,sims_ = [], []
         if in_nbrs_:
             in_nbrs = graph.in_nbrs(src)
             nbrs.append(in_nbrs)
-            sims.append(sim_metric(prev_Z[in_nbrs], prev_Z[src]))
+            sims = sim_metric(prev_Z[in_nbrs], prev_Z[src])
+            sims = sims.div(prev_Z[in_nbrs].norm(dim=1).mul(prev_Z[src].norm()))
+            sims_.append(sims)
         if out_nbrs_:
             out_nbrs = graph.out_nbrs(src)
             nbrs.append(out_nbrs)
-            sims.append(sim_metric(prev_Z[src], prev_Z[out_nbrs]))
+            sims = sim_metric(prev_Z[src], prev_Z[out_nbrs])
+            sims = sims.div(prev_Z[out_nbrs].norm(dim=1).mul(prev_Z[src].norm()))
+            sims_.append(sims)
         
-        sims = torch.cat(sims).softmax(0)
+        sims = torch.cat(sims_).softmax(0)
         nbrs = torch.cat(nbrs)
         graph.Z[src] = graph.X[src] + torch.matmul(sims, prev_Z[nbrs]).mul(gamma)
     
@@ -76,10 +80,10 @@ def train_epoch(model, train_loader, optimizer, approximated=False):
                     neg_probs.bernoulli()!=1,
                     torch.zeros(neg_probs.shape, device=device)
             )
-        neg_loss = (1-neg_probs.where(
+        neg_loss = (1-neg_probs).where(
                 neg_probs!=1, 
                 torch.ones(neg_probs.shape, device=device).mul(eps)
-            )).log().neg().sum()
+            ).log().neg().sum()
 
         total_loss = pos_loss + neg_loss.div(z_neg.shape[1]).mul(z_pos.shape[1])
 
@@ -128,7 +132,7 @@ if __name__ == '__main__':
         graph = CoraDataset(device=device, sampled=config.sampled, deepwalk=config.deepwalk)
     elif config.dataset == 'citeseer':
         graph = CiteseerDataset(device=device, sampled=config.sampled, deepwalk=config.deepwalk)
-      
+    
     num_valid = int(config.valid_size * len(graph))
     num_train = len(graph)-num_valid
    
@@ -174,7 +178,7 @@ if __name__ == '__main__':
                 train_cost = train_epoch(model, train_loader, optimizer, approximated)
                 valid_cost = valid_epoch(model, valid_loader)
                 
-                lr_scheduler.step(valid_cost)
+                lr_scheduler.step(valid_cost*9)
                 
                 if min_valid_cost > valid_cost:
                     min_valid_cost = valid_cost
@@ -189,7 +193,7 @@ if __name__ == '__main__':
                          'valid_cost': valid_cost*9},
                         context['n_P'] 
                     )
-                print(f'[MODEL TRAINING] {train_cost:5.5} {valid_cost:5.5} tol: {tolerence}                ', end='\r')
+                print(f'[MODEL TRAINING] {train_cost:5.5} {9*valid_cost:5.5} tol: {tolerence}                ', end='\r')
                 if tolerence == 0: 
                     model = torch.load(
                             os.path.join(PICKLE_PATH, 'models', 

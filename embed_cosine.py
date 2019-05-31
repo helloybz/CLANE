@@ -26,7 +26,7 @@ config = parser.parse_args()
 
 
 if __name__ == "__main__":
-    device = torch.device(f'cuda:{config.gpu}') if config.gpu else torch.device('cpu')
+    device = torch.device(f'cuda:{config.gpu}') if config.gpu is not None else torch.device('cpu')
     gamma = config.gamma
     tolerence_Z = config.tolerence_Z
     if config.dataset == 'cora':
@@ -34,7 +34,7 @@ if __name__ == "__main__":
     elif config.dataset == 'citeseer':
         graph = CiteseerDataset(device=device)
 
-    
+    import pdb; pdb.set_trace() 
     sim_metric = lambda x,y: F.cosine_similarity(x,y,dim=-1)
 
     min_distance = inf

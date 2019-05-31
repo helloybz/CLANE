@@ -48,7 +48,7 @@ class GraphDataset(Dataset):
                     self.A[source, target] = 1
                 except ValueError:
                     pass
-        self.A = self.A - torch.eye(len(self.id_list)).to(device)
+#        self.A = self.A - torch.eye(len(self.id_list)).to(device)
         self.edges = (self.A==1).nonzero()
 
         self.S = torch.zeros(self.A.shape).to(device)

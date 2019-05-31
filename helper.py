@@ -18,7 +18,7 @@ class DataTransformer:
         else:
             raise ValueError
         
-        if src_model == 'deepwalk' or src_model == 'node2vec':
+        if src_model == 'deepwalk':
             io.readline()
             while True:
                 sample = io.readline()
@@ -26,6 +26,15 @@ class DataTransformer:
                 node_id, *embedding = sample.split(' ')
                 embedding = torch.tensor(([float(val.strip()) for val in embedding]))
                 dataset.set_embedding(node_id, embedding)
+        elif src_model == 'node2vec':
+            io.readline()
+            while True:
+                sample = io.readline()
+                if not sample: break
+                node_id, *embedding = sample.split(' ')
+                embedding = torch.tensor(([float(val.strip()) for val in embedding]))
+                dataset.set_embedding(dataset.id_list[int(node_id)], embedding)
+            
         else:
             raise ValueError
 

@@ -87,6 +87,27 @@ def link_prediction(model_tag, **kwargs):
     # False Positive Rate = 엣지 없는 pairs들 중 몇개나 엣지가 있다고 했는지.
     return result
 
+@torch.no_grad()
+def graph_reconstruction(embeddings, sim_metric, original_A, ks, **kwargs):
+    result = dict()
+    result['model_tag'] = kwargs['model_tag']
+    embeddings = torch.tensor(embeddings, device=torch.device(f'cuda:{config.gpu}'))
+    
+    reconstructed_A = torch.zeros(original_A.shape)
+
+    for src in range(embeddings.shape[0]):
+        sim = sim_metric(embeddings[src], embeddings)
+        reconstructed_A[src] = sim.sigmoid()
+    
+    _, indices = reconstructed_A.flatten().sort(descending=True)
+  
+    
+    for k in ks:
+        result[f'precision@{k}'] = original_A.flatten()[indices][:k].sum().div(k).item()
+
+    return result
+
+
 def main(config):
     
     # load target embeddings. 
@@ -126,6 +147,32 @@ def main(config):
                 else:
                     print(key, '\t', '{:4f}'.format(result[key]))
 
+    elif config.experiment == 'reconstruction':
+        for target_path in target_paths:
+            model_tag = os.path.basename(target_path)
+            if 'edgeprob' in target_path:
+                sim_metric = torch.load(os.path.join(PICKLE_PATH, 'models', model_tag), map_location=torch.device(f'cuda:{config.gpu}')).get_sims
+            else:
+                sim_metric = lambda x,y: torch.nn.functionaltorch.mv(y,x).div(torch.mv(y,x).mean())
+
+            if 'cora' in target_path:
+                original_A = CoraDataset(device=torch.device(f'cuda:{config.gpu}')).A
+            else:
+                raise ValueError
+
+            result = graph_reconstruction(
+                embeddings=pickle.load(open(target_path, 'rb')),
+                sim_metric=sim_metric,
+                original_A=original_A,
+                ks=config.k,
+                model_tag=model_tag
+            )
+            print('===========================')
+            for key in result.keys():
+                if key == 'model_tag':
+                    print(result[key])
+                else:
+                    print(key, '\t', '{:4f}'.format(result[key]))
     else:
         raise ValueError
 
@@ -137,7 +184,8 @@ if __name__ == "__main__":
     
     # args for node classification
     parser.add_argument('--test_size', type=float)
-    parser.add_argument('--gpu', type=int)
+    parser.add_argument('--gpu', type=str)
+    parser.add_argument('--k', nargs='+', type=int)
 
     config = parser.parse_args()
     print(config)
