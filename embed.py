@@ -35,25 +35,24 @@ parser.add_argument('--model_tag', type=str, default='test')
 
 
 @torch.no_grad()
-def update_embedding(graph, sim_metric, gamma, in_nbrs_=False, out_nbrs_=False):
+def update_embedding(graph, sim_metric, recent_Z, gamma, in_nbrs_=False, out_nbrs_=False):
     prev_Z = graph.Z.clone()
-
     for src in range(graph.Z.shape[0]):
         nbrs,sims_ = [], []
         if in_nbrs_:
             in_nbrs = graph.in_nbrs(src)
             nbrs.append(in_nbrs)
-            sims = sim_metric(prev_Z[in_nbrs], prev_Z[src])
-            sims = sims.div(prev_Z[in_nbrs].norm(dim=1).mul(prev_Z[src].norm()))
+            sims = sim_metric(recent_Z[in_nbrs], recent_Z[src])
+            sims = sims.div(recent_Z[in_nbrs].norm(dim=1).mul(recent_Z[src].norm()))
             sims_.append(sims)
         if out_nbrs_:
             out_nbrs = graph.out_nbrs(src)
             nbrs.append(out_nbrs)
-            sims = sim_metric(prev_Z[src], prev_Z[out_nbrs])
-            sims = sims.div(prev_Z[out_nbrs].norm(dim=1).mul(prev_Z[src].norm()))
+            sims = sim_metric(recent_Z[src], recent_Z[out_nbrs])
+            sims = sims.div(recent_Z[out_nbrs].norm(dim=1).mul(recent_Z[src].norm()))
             sims_.append(sims)
         
-        sims = torch.cat(sims_).softmax(0)
+        sims = torch.cat(sims_).softmax(0).mul(gamma)
         nbrs = torch.cat(nbrs)
         graph.Z[src] = graph.X[src] + torch.matmul(sims, prev_Z[nbrs]).mul(gamma)
     
@@ -136,7 +135,6 @@ if __name__ == '__main__':
     num_valid = int(config.valid_size * len(graph))
     num_train = len(graph)-num_valid
    
-    model = EdgeProbability(dim=graph.Z.shape[1]).to(device)
     context = {'iteration': 0,
             'n_P': 0,
             'n_Z': 0
@@ -145,13 +143,55 @@ if __name__ == '__main__':
     while True:
         context['iteration'] += 1
 
+        tolerence = config.tolerence_Z
+        min_distance = inf
+        try:
+            graph.Z = torch.tensor(pickle.load(open(
+                    os.path.join(
+                            PICKLE_PATH, 'embedding',
+                            f'{config.model_tag}_iter_{context["iteration"]}'),
+                    'rb')
+                )).to(device)
+            
+        except:
+            recent_converged_Z = graph.Z.clone()
+            while True:
+                context['n_Z'] += 1
+                distance = update_embedding(
+                        graph, 
+                        model.get_sims, 
+                        recent_converged_Z,
+                        config.gamma, 
+                        in_nbrs_=config.in_nbrs, out_nbrs_=config.out_nbrs
+                    )
+                
+                if min_distance > distance:
+                    min_distance = distance
+                    tolerence = config.tolerence_Z
+                else:
+                    tolerence -= 1
+                print(f'[EMBEDDING] {min_distance:5.5} tol:{tolerence}               ', end='\r')
+                writer.add_scalars(f'{config.model_tag}/{"embedding"}',
+                        {'dist': distance},
+                        context['n_Z'] 
+                    )
+                if tolerence == 0: 
+                    pickle.dump(
+                            graph.Z.cpu().numpy(),
+                            open(os.path.join(PICKLE_PATH, 'embedding', 
+                                    f'{config.model_tag}_iter_{context["iteration"]}'
+                                ), 'wb'))
+
+                    print(f'[EMBEDDING] {min_distance:5.5}')
+                    break
         tolerence = config.tolerence_P
         min_valid_cost = inf
 
+        model = EdgeProbability(dim=graph.Z.shape[1]).to(device)
         optimizer = torch.optim.Adam(
                 model.parameters(), 
                 lr=config.lr)
-        lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True)
+        lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, eps=1e-15)
         try:
             model = torch.load(
                     os.path.join(
@@ -207,38 +247,4 @@ if __name__ == '__main__':
                     break
 
         pdb.set_trace()
-        tolerence = config.tolerence_Z
-        min_distance = inf
-        try:
-            graph.Z = torch.tensor(pickle.load(open(
-                    os.path.join(
-                            PICKLE_PATH, 'embedding',
-                            f'{config.model_tag}_iter_{context["iteration"]}'),
-                    'rb')
-                )).to(device)
-            
-        except:
-            while True:
-                context['n_Z'] += 1
-                distance = update_embedding(graph, model.get_sims, config.gamma, in_nbrs_=config.in_nbrs, out_nbrs_=config.out_nbrs)
-                
-                if min_distance > distance:
-                    min_distance = distance
-                    tolerence = config.tolerence_Z
-                else:
-                    tolerence -= 1
-                print(f'[EMBEDDING] {min_distance:5.5} tol:{tolerence}               ', end='\r')
-                writer.add_scalars(f'{config.model_tag}/{"embedding"}',
-                        {'dist': distance},
-                        context['n_Z'] 
-                    )
-                if tolerence == 0: 
-                    pickle.dump(
-                            graph.Z.cpu().numpy(),
-                            open(os.path.join(PICKLE_PATH, 'embedding', 
-                                    f'{config.model_tag}_iter_{context["iteration"]}'
-                                ), 'wb'))
-
-                    print(f'[EMBEDDING] {min_distance:5.5}')
-                    break
 
