@@ -63,7 +63,6 @@ def train_epoch(model, train_loader, optimizer, approximated=False):
                 (1-neg_probs)!=0, 
                 torch.ones(neg_probs.shape, device=device).mul(eps)
             ).log().neg().sum()
-        pdb.set_trace()
         total_loss = pos_loss + neg_loss.div(neg_probs.shape[0]).mul(pos_probs.shape[0])
         
         total_loss.backward()
