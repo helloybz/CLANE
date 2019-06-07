@@ -87,8 +87,7 @@ def link_prediction(model_tag, **kwargs):
     return result
 
 @torch.no_grad()
-def graph_reconstruction(embeddings, sim_metric, original_A, ks, **kwargs):
-    import pdb; pdb.set_trace()
+def graph_reconstruction(embeddings, sim_metric, original_A, **kwargs):
     result = dict()
     result['model_tag'] = kwargs['model_tag']
     embeddings = torch.tensor(embeddings, device=kwargs['device'])
@@ -100,9 +99,11 @@ def graph_reconstruction(embeddings, sim_metric, original_A, ks, **kwargs):
     
     _, indices = reconstructed_A.flatten().sort(descending=True)
   
-    
-    for k in ks:
-        result[f'precision@{k}'] = original_A.flatten()[indices][:k].sum().div(k).item()
+    result['f1_score'] = f1_score(
+            original_A.flatten().cpu(), 
+            reconstructed_A.flatten().round().cpu()
+        )
+
 
     return result
 
@@ -147,7 +148,6 @@ def main(config):
                     print(key, '\t', '{:4f}'.format(result[key]))
 
     elif config.experiment == 'reconstruction':
-
         if config.gpu is not None:
             device = torch.device(f'cuda:{config.gpu}')
         else:
@@ -169,7 +169,6 @@ def main(config):
                 embeddings=pickle.load(open(target_path, 'rb')),
                 sim_metric=sim_metric,
                 original_A=original_A,
-                ks=config.k,
                 model_tag=model_tag,
                 device=device
             )
@@ -191,7 +190,6 @@ if __name__ == "__main__":
     # args for node classification
     parser.add_argument('--test_size', type=float)
     parser.add_argument('--gpu', type=str)
-    parser.add_argument('--k', nargs='+', type=int)
 
     config = parser.parse_args()
     print(config)

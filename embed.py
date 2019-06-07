@@ -63,8 +63,8 @@ def train_epoch(model, train_loader, optimizer, approximated=False):
                 (1-neg_probs)!=0, 
                 torch.ones(neg_probs.shape, device=device).mul(eps)
             ).log().neg().sum()
-        
-        total_loss = pos_loss + neg_loss.div(z_neg.shape[1]).mul(z_pos.shape[1])
+        pdb.set_trace()
+        total_loss = pos_loss + neg_loss.div(neg_probs.shape[0]).mul(pos_probs.shape[0])
         
         total_loss.backward()
         optimizer.step()
@@ -94,7 +94,7 @@ def valid_epoch(model, valid_loader):
                 neg_probs.new_full(neg_probs.shape, eps)
             ).log().neg().sum()
         
-        total_loss = pos_loss + neg_loss.div(z_neg.shape[1]).mul(z_pos.shape[1])
+        total_loss = pos_loss + neg_loss
         valid_cost += total_loss.item()
          
     return valid_cost
@@ -183,7 +183,7 @@ if __name__ == '__main__':
                         )
                     torch.save(model,
                             os.path.join(PICKLE_PATH, 'models', f'{config.model_tag}_iter_{context["iteration"]}'))
-                    print(f'[MODEL TRAINING] {train_cost:5.5} {valid_cost:5.5} tol: {tolerence}')
+                    print(f'[MODEL TRAINING] {train_cost:5.5} {9*valid_cost:5.5} tol: {tolerence}')
                     break
 
         tolerence = config.tolerence_Z
