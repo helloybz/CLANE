@@ -155,10 +155,10 @@ def main(config):
         
         for target_path in target_paths:
             model_tag = os.path.basename(target_path)
-            if 'edgeprob' in target_path:
+            try:
                 sim_metric = torch.load(os.path.join(PICKLE_PATH, 'models', model_tag), map_location=device)
-            else:
-                sim_metric = lambda x,y: torch.nn.functional.cosine_similarity(x,y,dim=-1)
+            except:
+                continue
 
             if 'cora' in target_path:
                 original_A = CoraDataset(device=device).A

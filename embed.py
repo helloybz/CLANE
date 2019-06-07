@@ -71,7 +71,7 @@ def train_epoch(model, train_loader, optimizer, approximated=False):
     return train_cost
 
 @torch.no_grad()
-def valid_epoch(model, valid_loader):
+def valid_epoch(model, valid_loader, approximated):
     model.eval()
     eps=1e-6
 
@@ -93,7 +93,7 @@ def valid_epoch(model, valid_loader):
                 neg_probs.new_full(neg_probs.shape, eps)
             ).log().neg().sum()
         
-        total_loss = pos_loss + neg_loss
+        total_loss = pos_loss + neg_loss.div(neg_probs.shape[0]).mul(pos_probs.shape[0])
         valid_cost += total_loss.item()
          
     return valid_cost
@@ -155,7 +155,7 @@ if __name__ == '__main__':
                         shuffle=True)
 
                 train_cost = train_epoch(model, train_loader, optimizer, approximated)
-                valid_cost = valid_epoch(model, valid_loader)
+                valid_cost = valid_epoch(model, valid_loader, approximated)
                 
                 lr_scheduler.step(valid_cost*9)
                 
