@@ -9,15 +9,14 @@ import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset
 
-from dataset import CoraDataset, CiteseerDataset
-from experiment import node_classification
+from dataset import CoraDataset
 from models import EdgeProbability
 from settings import PICKLE_PATH
            
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='cora')
-parser.add_argument('--deepwalk', action='store_true')
+parser.add_argument('--load', type=str)
 parser.add_argument('--sampled', action='store_true')
 
 parser.add_argument('--tolerence_Z', type=int, default=30)
@@ -111,7 +110,7 @@ if __name__ == '__main__':
     eps=1e-6
    
     if config.dataset == 'cora':
-        graph = CoraDataset(device=device, sampled=config.sampled, deepwalk=config.deepwalk)
+        graph = CoraDataset(device=device, sampled=config.sampled, load=config.load or 'cora_X')
     else:
         raise ValueError
 

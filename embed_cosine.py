@@ -19,8 +19,6 @@ parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--gamma', type=float, default=0.74)
 parser.add_argument('--tolerence_Z', type=int, default=30)
 parser.add_argument('--model_tag', type=str)
-parser.add_argument('--in_nbrs', action='store_true')
-parser.add_argument('--out_nbrs', action='store_true')
 config = parser.parse_args()
 
 
@@ -29,19 +27,25 @@ if __name__ == "__main__":
     device = torch.device(f'cuda:{config.gpu}') if config.gpu is not None else torch.device('cpu')
     gamma = config.gamma
     tolerence_Z = config.tolerence_Z
+
     if config.dataset == 'cora':
         graph = CoraDataset(device=device)
-    elif config.dataset == 'citeseer':
-        graph = CiteseerDataset(device=device)
+    else:
+        raise ValueError
 
     import pdb; pdb.set_trace() 
     sim_metric = lambda x,y: F.cosine_similarity(x,y,dim=-1)
 
     min_distance = inf
     tolerence = tolerence_Z
+    recent_Z = graph.Z.clone()
     while tolerence != 0:
-        distance = update_embedding(graph, sim_metric, gamma, in_nbrs_=config.in_nbrs, out_nbrs_=config.out_nbrs)
-
+        distance = update_embedding(
+                graph, 
+                sim_metric,
+                recent_Z,
+                gamma
+            )
         if min_distance > distance:
             min_distance = distance
             tolerence = tolerence_Z

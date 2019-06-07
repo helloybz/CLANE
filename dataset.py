@@ -1,4 +1,5 @@
 import os
+import pickle
 
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -9,51 +10,20 @@ from settings import DATA_PATH, PICKLE_PATH
 
 
 class GraphDataset(Dataset):
-    def __init__(self, dataset, sampled, device=torch.device('cpu'), **kwargs):
-        content_list= list() 
-        label_list = list()
-        self.device= device 
-        self.id_list= list()
-        with open(os.path.join(DATA_PATH, dataset, '{}.content'.format(dataset)),
-                  'r') as content_io:
-            while True:
-                line = content_io.readline()
-                if not line: break
-                id_, *content, label = line.split('\t')
-                self.id_list.append(id_)
-                content = torch.tensor([float(value) for value in content]).to(device)
-                content_list.append(content)
-                label_list.append(label)
-        
-        if 'deepwalk' in kwargs.keys() and kwargs['deepwalk']:
-            import pickle
-            deepwalk = pickle.load(open(os.path.join(PICKLE_PATH, dataset, '{}_deepwalk'.format(dataset)), 'rb'))
-            self.X = torch.tensor(deepwalk).to(device)
-        else:
-            self.X = torch.stack(content_list)
-
+    def __init__(self,dataset, device, sampled, load):
+        X = pickle.load(open(os.path.join(PICKLE_PATH, 'embedding', load),'rb'))
+        self.X = torch.tensor(X, device=device)
         self.Z = self.X.clone()
-        label_set = list(set(label_list))
-        self.Y = torch.tensor([label_set.index(label) for label in label_list]).to(device)
-        del label_set, label_list, content_list
-        self.A = torch.zeros(len(self.id_list), len(self.id_list)).to(device)
-        with open(os.path.join(DATA_PATH, dataset,'{}.cites'.format(dataset)),
-                  'r') as edge_io:
+        Y = pickle.load(open(os.path.join(DATA_PATH, dataset, f'{dataset}.labels'),'rb'))
+        self.Y = torch.tensor(Y, device=device)
+        self.A = torch.zeros(self.X.shape[0], self.X.shape[0], device=device)
+        with open(os.path.join(DATA_PATH, dataset, f'{dataset}.edgelist'), 'r') as edge_io:
             while True:
                 line = edge_io.readline()
                 if not line: break
-                target, source = line.split('\t')
-                try:
-                    target, source = self.id_list.index(target.strip()), self.id_list.index(source.strip())
-                    self.A[source, target] = 1
-                except ValueError:
-                    pass
-#        self.A = self.A - torch.eye(len(self.id_list)).to(device)
-        self.edges = (self.A==1).nonzero()
+                src, dst = line.split(' ')
+                self.A[int(src), int(dst)] = 1
 
-        self.S = torch.zeros(self.A.shape).to(device)
-
-        self.batch_norm = torch.nn.BatchNorm1d(num_features=self.Z.shape[-1], affine=False).to(device)
         if sampled:
             sampled_link = open(
                     os.path.join(DATA_PATH, dataset, '{}_sampled.cites'.format(dataset))
@@ -77,10 +47,6 @@ class GraphDataset(Dataset):
         idx = self.id_list.index(id_)
         self.Z[idx] = embedding.to(self.device)
     
-    @property
-    def normalized_Z(self):
-        return self.batch_norm(self.Z) 
-
     def out_nbrs(self, index):
         return (self.A[index] == 1).nonzero().squeeze(-1)
     
@@ -92,6 +58,7 @@ class GraphDataset(Dataset):
 
     def non_nbrs(self, index):
         return (self.A[index] == 0).nonzero().squeeze(-1)
+
     @property
     def d(self):
         return self.Z.shape[-1]
@@ -119,14 +86,14 @@ class GraphDataset(Dataset):
         self.G = nx.read_gpickle(os.path.join(PICKLE_PATH, 'network', config.model_tag))
 
 class CoraDataset(GraphDataset):
-    def __init__(self, sampled=False, deepwalk=False, **kwargs):
-        super(CoraDataset, self).__init__('cora', sampled, deepwalk=deepwalk, **kwargs)
+    def __init__(self, device=torch.device('cpu'), sampled=False, load='cora_X'):
+        super(CoraDataset, self).__init__('cora', device, sampled, load)
 
-class CiteseerDataset(GraphDataset):
+class FlickrDataset(GraphDataset):
     def __init__(self, sampled=False, **kwargs):
-        super(CiteseerDataset, self).__init__('citeseer', sampled, **kwargs)
+        super(FlickrDataset, self).__init__('flickr', sampled, **kwargs)
 
 
 if __name__ == "__main__":
-    graph = CiteseerDataset()
+    graph = CoraDataset(load='cora_deepwalk_d128')
     import pdb;    pdb.set_trace()

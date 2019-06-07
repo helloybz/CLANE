@@ -11,13 +11,12 @@ from sklearn.metrics import roc_auc_score
 from torch import device
 import torch
 
-from dataset import CoraDataset, CiteseerDataset
+from dataset import CoraDataset
 from settings import DATA_PATH
 from settings import PICKLE_PATH
 
 DATASET_MAP = {
     'cora':CoraDataset,
-    'citeseer':CiteseerDataset
     }
 
 
@@ -89,15 +88,15 @@ def link_prediction(model_tag, **kwargs):
 
 @torch.no_grad()
 def graph_reconstruction(embeddings, sim_metric, original_A, ks, **kwargs):
+    import pdb; pdb.set_trace()
     result = dict()
     result['model_tag'] = kwargs['model_tag']
-    embeddings = torch.tensor(embeddings, device=torch.device(f'cuda:{config.gpu}'))
+    embeddings = torch.tensor(embeddings, device=kwargs['device'])
     
     reconstructed_A = torch.zeros(original_A.shape)
-
     for src in range(embeddings.shape[0]):
         sim = sim_metric(embeddings[src], embeddings)
-        reconstructed_A[src] = sim.sigmoid()
+        reconstructed_A[src] = sim
     
     _, indices = reconstructed_A.flatten().sort(descending=True)
   
@@ -148,15 +147,21 @@ def main(config):
                     print(key, '\t', '{:4f}'.format(result[key]))
 
     elif config.experiment == 'reconstruction':
+
+        if config.gpu is not None:
+            device = torch.device(f'cuda:{config.gpu}')
+        else:
+            device =  torch.device('cpu')
+        
         for target_path in target_paths:
             model_tag = os.path.basename(target_path)
             if 'edgeprob' in target_path:
-                sim_metric = torch.load(os.path.join(PICKLE_PATH, 'models', model_tag), map_location=torch.device(f'cuda:{config.gpu}')).get_sims
+                sim_metric = torch.load(os.path.join(PICKLE_PATH, 'models', model_tag), map_location=device)
             else:
-                sim_metric = lambda x,y: torch.nn.functionaltorch.mv(y,x).div(torch.mv(y,x).mean())
+                sim_metric = lambda x,y: torch.nn.functional.cosine_similarity(x,y,dim=-1)
 
             if 'cora' in target_path:
-                original_A = CoraDataset(device=torch.device(f'cuda:{config.gpu}')).A
+                original_A = CoraDataset(device=device).A
             else:
                 raise ValueError
 
@@ -165,7 +170,8 @@ def main(config):
                 sim_metric=sim_metric,
                 original_A=original_A,
                 ks=config.k,
-                model_tag=model_tag
+                model_tag=model_tag,
+                device=device
             )
             print('===========================')
             for key in result.keys():
