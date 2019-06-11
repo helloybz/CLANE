@@ -48,16 +48,16 @@ class GraphDataset(Dataset):
         self.Z[idx] = embedding.to(self.device)
     
     def out_nbrs(self, index):
-        return (self.A[index] == 1).nonzero().squeeze(-1)
+        return (self.A[index]==1).nonzero().view(-1)
     
     def in_nbrs(self, index):
-        return (self.A.t()[index] == 1).nonzero().squeeze(-1)
+        return (self.A.t()[index] == 1).nonzero().view(-1)
     
     def nbrs(self, index):
         return torch.cat([self.out_nbrs(index), self.in_nbrs(index)])
 
     def non_nbrs(self, index):
-        return (self.A[index] == 0).nonzero().squeeze(-1)
+        return (self.A[index]==0).nonzero().view(-1)
 
     @property
     def d(self):

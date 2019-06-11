@@ -98,10 +98,12 @@ def graph_reconstruction(embeddings, sim_metric, original_A, **kwargs):
         reconstructed_A[src] = sim
     
     _, indices = reconstructed_A.flatten().sort(descending=True)
-  
+    
+    import pdb; pdb.set_trace()
     result['f1_score'] = f1_score(
             original_A.flatten().cpu(), 
-            reconstructed_A.flatten().round().cpu()
+            reconstructed_A.flatten().bernoulli().cpu(),
+            average='macro'
         )
 
 
@@ -156,6 +158,10 @@ def main(config):
         for target_path in target_paths:
             model_tag = os.path.basename(target_path)
             try:
+                head = model_tag.split('_iter_')[0]
+                tail = model_tag.split('_iter_')[1]
+                model_tag = f'{head}_iter_{str(int(tail)+1)}'
+
                 sim_metric = torch.load(os.path.join(PICKLE_PATH, 'models', model_tag), map_location=device)
             except:
                 continue

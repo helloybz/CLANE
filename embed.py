@@ -36,34 +36,43 @@ def update_embedding(graph, sim_metric, recent_Z, gamma):
     prev_Z = graph.Z.clone()
     for src in range(graph.Z.shape[0]):
         nbrs = graph.out_nbrs(src)
+        if nbrs.shape[0] == 0 : continue
         sims = sim_metric(recent_Z[src], recent_Z[nbrs])
-        sims = sims.div(recent_Z[nbrs].norm(dim=1).mul(recent_Z[src].norm())).softmax(0)
-        graph.Z[src] = graph.X[src] + torch.matmul(sims, prev_Z[nbrs]).mul(gamma)
-     
+        sims = sims.relu().add(eps)
+        if sims.sum()==0: pdb.set_trace()
+
+        sims = sims.div(sims.sum()).mul(gamma)
+#        sims = sims.div(recent_Z[nbrs].norm(dim=1).mul(recent_Z[src].norm())).softmax(0)
+        graph.Z[src] = graph.X[src] + torch.matmul(sims.view(1,-1), prev_Z[nbrs].view(-1,graph.d))
+#        if float('nan') in graph.Z[src]:
+#            print('efef')
+#            pdb.set_trace()
+
     return torch.norm(graph.Z - prev_Z, 1)
 
 
-def train_epoch(model, train_loader, optimizer, approximated=False):
+def train_epoch(model, train_loader, optimizer, approximated):
     model.train()
     eps=1e-6
     train_cost = 0
-    for z_src, z_pos, z_neg in train_loader:
+    for z_src, z_out, z_neg in train_loader:
         optimizer.zero_grad()
-        if z_pos.shape[1] == 0: continue
-        pos_probs = model(z_src, z_pos) 
+        if z_out.shape[1] == 0: continue
+        out_probs = model(z_src, z_out) 
         neg_probs = model(z_src, z_neg)
              
-        pos_loss = pos_probs.where(
-                pos_probs!=0, 
-                torch.ones(pos_probs.shape, device=device).mul(eps)
+        out_loss = out_probs.where(
+                out_probs!=0, 
+                torch.ones(out_probs.shape, device=device).mul(eps)
             ).log().neg().sum()
+
         if approximated:
             neg_probs = neg_probs[neg_probs.bernoulli().byte()]
         neg_loss = (1-neg_probs).where(
                 (1-neg_probs)!=0, 
                 torch.ones(neg_probs.shape, device=device).mul(eps)
             ).log().neg().sum()
-        total_loss = pos_loss + neg_loss.div(neg_probs.shape[0]).mul(pos_probs.shape[0])
+        total_loss = out_loss + neg_loss
         
         total_loss.backward()
         optimizer.step()
@@ -74,26 +83,25 @@ def train_epoch(model, train_loader, optimizer, approximated=False):
 def valid_epoch(model, valid_loader, approximated):
     model.eval()
     eps=1e-6
-
     valid_cost = 0
 
-    for batch_idx, (z_src, z_pos, z_neg) in enumerate(valid_loader):
-        if z_pos.shape[1] == 0: continue
-        pos_probs = model(z_src, z_pos) 
+    for batch_idx, (z_src, z_out, z_neg) in enumerate(valid_loader):
+        if z_out.shape[1] == 0: continue
+        out_probs = model(z_src, z_out) 
         neg_probs = model(z_src, z_neg)
         
-        pos_loss = pos_probs.where(
-                pos_probs!=0, 
-                pos_probs.new_full(pos_probs.shape, eps)
+        out_loss = out_probs.where(
+                out_probs!=0,
+                torch.ones(out_probs.shape, device=device).mul(eps),
             ).log().neg().sum()
         if approximated:
             neg_probs = neg_probs[neg_probs.bernoulli().byte()]
         neg_loss = (1-neg_probs).where(
                 (1-neg_probs)!=0, 
-                neg_probs.new_full(neg_probs.shape, eps)
+                torch.ones(neg_probs.shape, device=device).mul(eps)
             ).log().neg().sum()
         
-        total_loss = pos_loss + neg_loss.div(neg_probs.shape[0]).mul(pos_probs.shape[0])
+        total_loss = out_loss + neg_loss
         valid_cost += total_loss.item()
          
     return valid_cost
