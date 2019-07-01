@@ -1,26 +1,38 @@
 import torch
 from torch import nn
 
+torch.manual_seed(0)
 class EdgeProbability(nn.Module):
     def __init__(self, dim):
         super(EdgeProbability, self).__init__()
 
-        self.A = nn.Linear(in_features=dim,
-                           out_features=dim,
-                           bias=False)
-        self.B = nn.Linear(in_features=dim,
-                           out_features=dim,
-                           bias=False)
+        self.A = nn.Sequential(
+            nn.Linear(dim,dim),
+            nn.Tanh(),
+            nn.Linear(dim,dim)
+        )
+        self.B = nn.Sequential(
+            nn.Linear(dim,dim),
+            nn.Tanh(),
+            nn.Linear(dim,dim)
+        )
+#        self.A = nn.Linear(in_features=dim,
+#                           out_features=dim,
+#                           bias=False)
+#        self.B = nn.Linear(in_features=dim,
+#                           out_features=dim,
+#                           bias=False)
     
     def forward(self, z_src, z_dst):
-        Asrc = self.A(z_src).unsqueeze(-2)
-        Bdst = self.B(z_dst).unsqueeze(-1)
-        return torch.matmul(Asrc,Bdst).sigmoid().view(-1)
+        Asrc = self.A(z_src)
+        Bdst = self.B(z_dst)
+        return torch.matmul(Asrc, Bdst.t()).sigmoid().view(-1)
+
 
     def get_sims(self, z_src, z_dst):
-        Asrc = self.A(z_src).unsqueeze(-2)
-        Bdst = self.B(z_dst).unsqueeze(-1)
-        output = torch.matmul(Asrc, Bdst)
+        Asrc = self.A(z_src)
+        Bdst = self.B(z_dst)
+        output = torch.matmul(Asrc, Bdst.t())
         return output.view(-1)
 
 

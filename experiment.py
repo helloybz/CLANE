@@ -11,12 +11,13 @@ from sklearn.metrics import roc_auc_score
 from torch import device
 import torch
 
-from dataset import CoraDataset
+from dataset import CoraDataset, CiteseerDataset
 from settings import DATA_PATH
 from settings import PICKLE_PATH
 
 DATASET_MAP = {
     'cora':CoraDataset,
+    'citeseer':CiteseerDataset
     }
 
 
@@ -27,18 +28,18 @@ def node_classification(embeddings, labels, test_size, name, **kwargs):
     result['macro_f1'] = list()
     
     # split dataset
-    for i in range(10):
+    for i in range(30):
         train_X, test_X, train_Y, test_Y = train_test_split(embeddings, labels, test_size=test_size)
           
-        classifier = LogisticRegression(solver='lbfgs', multi_class='multinomial', max_iter=1000000, n_jobs=4)
+        classifier = LogisticRegression(solver='lbfgs', multi_class='ovr', max_iter=1000000, n_jobs=4)
         classifier.fit(train_X, train_Y)
         pred = classifier.predict(test_X)
 
         result['micro_f1'].append(f1_score(pred, test_Y, average='micro'))
         result['macro_f1'].append(f1_score(pred, test_Y, average='macro'))
 
-    result['micro_f1'] = sum(result['micro_f1'])/10
-    result['macro_f1'] = sum(result['macro_f1'])/10
+    result['micro_f1'] = sum(result['micro_f1'])/30
+    result['macro_f1'] = sum(result['macro_f1'])/30
     
     return result
 
@@ -91,6 +92,8 @@ def graph_reconstruction(embeddings, sim_metric, original_A, **kwargs):
     result = dict()
     result['model_tag'] = kwargs['model_tag']
     embeddings = torch.tensor(embeddings, device=kwargs['device'])
+    mean, std = embeddings.mean(), embeddings.std()
+    embeddings = (embeddings-mean)/std
     
     reconstructed_A = torch.zeros(original_A.shape)
     for src in range(embeddings.shape[0]):
@@ -99,7 +102,6 @@ def graph_reconstruction(embeddings, sim_metric, original_A, **kwargs):
     
     _, indices = reconstructed_A.flatten().sort(descending=True)
     
-    import pdb; pdb.set_trace()
     result['f1_score'] = f1_score(
             original_A.flatten().cpu(), 
             reconstructed_A.flatten().bernoulli().cpu(),

@@ -6,10 +6,10 @@ import pickle
 from numpy import inf
 from tensorboardX import SummaryWriter
 import torch
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
 from torch.utils.data import DataLoader, Dataset
 
-from dataset import CoraDataset
+from dataset import CoraDataset, CiteseerDataset
 from models import EdgeProbability
 from settings import PICKLE_PATH
            
@@ -20,7 +20,6 @@ parser.add_argument('--load', type=str)
 parser.add_argument('--sampled', action='store_true')
 
 parser.add_argument('--tolerence_Z', type=int, default=30)
-parser.add_argument('--sim_metric', type=str)
 parser.add_argument('--approximated', action='store_true')
 parser.add_argument('--gamma', type=float, default=0.74)
 
@@ -51,13 +50,13 @@ def update_embedding(graph, sim_metric, recent_Z, gamma):
     return torch.norm(graph.Z - prev_Z, 1)
 
 
-def train_epoch(model, train_loader, optimizer, approximated):
+def train_epoch(model, train_set, optimizer, approximated):
     model.train()
     eps=1e-6
     train_cost = 0
-    for z_src, z_out, z_neg in train_loader:
+    for z_src, z_out, z_neg in train_set:
         optimizer.zero_grad()
-        if z_out.shape[1] == 0: continue
+        if z_out.shape[0] == 0: continue
         out_probs = model(z_src, z_out) 
         neg_probs = model(z_src, z_neg)
              
@@ -80,13 +79,12 @@ def train_epoch(model, train_loader, optimizer, approximated):
     return train_cost
 
 @torch.no_grad()
-def valid_epoch(model, valid_loader, approximated):
+def valid_epoch(model, valid_set, approximated):
     model.eval()
-    eps=1e-6
+    eps=1e-10
     valid_cost = 0
-
-    for batch_idx, (z_src, z_out, z_neg) in enumerate(valid_loader):
-        if z_out.shape[1] == 0: continue
+    for z_src, z_out, z_neg in valid_set:
+        if z_out.shape[0] == 0: continue
         out_probs = model(z_src, z_out) 
         neg_probs = model(z_src, z_neg)
         
@@ -110,7 +108,6 @@ if __name__ == '__main__':
     config = parser.parse_args()
     print(config)
 
-    iterative = config.sim_metric == 'edgeprob'
     device = torch.device('cuda:{}'.format(config.gpu))
     approximated = config.approximated
     writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
@@ -118,6 +115,12 @@ if __name__ == '__main__':
    
     if config.dataset == 'cora':
         graph = CoraDataset(device=device, sampled=config.sampled, load=config.load or 'cora_X')
+    elif config.dataset == 'citeseer':
+        graph = CiteseerDataset(
+                device=device,
+                sampled=config.sampled,
+                load=config.load or 'citeseer_X'
+            )
     else:
         raise ValueError
 
@@ -139,8 +142,12 @@ if __name__ == '__main__':
         optimizer = torch.optim.Adam(
                 model.parameters(), 
                 lr=config.lr)
-        lr_scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, eps=1e-15)
-
+        graph.standard()
+        lr_scheduler = MultiStepLR(
+                optimizer,
+                milestones=[100,180,250,500],
+                gamma=0.1,
+            )
         try:
             model = torch.load(
                     os.path.join(
@@ -153,19 +160,12 @@ if __name__ == '__main__':
                 context['n_P'] += 1
 
                 train_set, valid_set = torch.utils.data.random_split(
-                        graph, [num_train, num_valid]
-                    )
-                train_loader = DataLoader(
-                        train_set,
-                        shuffle=True)
-                valid_loader = DataLoader(
-                        valid_set,
-                        shuffle=True)
+                        graph, [num_train, num_valid])
 
-                train_cost = train_epoch(model, train_loader, optimizer, approximated)
-                valid_cost = valid_epoch(model, valid_loader, approximated)
+                train_cost = train_epoch(model, train_set, optimizer, approximated)
+                valid_cost = valid_epoch(model, valid_set, approximated)
                 
-                lr_scheduler.step(valid_cost*9)
+                lr_scheduler.step()
                 
                 if min_valid_cost > valid_cost:
                     min_valid_cost = valid_cost
@@ -204,7 +204,8 @@ if __name__ == '__main__':
                     'rb')
                 )).to(device)
         except:
-            recent_converged_Z = graph.Z.clone()
+            graph.standard()
+            recent_converged_Z = graph.standard_Z.clone()
             while True:
                 context['n_Z'] += 1
                 distance = update_embedding(

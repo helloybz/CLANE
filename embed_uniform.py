@@ -9,7 +9,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import torch
 from torch.nn import functional as F
 
-from dataset import CoraDataset, CiteseerDataset
+from dataset import CoraDataset
 from settings import PICKLE_PATH
 
 
@@ -29,7 +29,7 @@ def update_embedding(graph, sim_metric, recent_Z, gamma):
     for src in range(graph.Z.shape[0]):
         nbrs = graph.out_nbrs(src)
         if nbrs.shape[0] == 0: continue
-        sims = sim_metric(recent_Z[src], recent_Z[nbrs]).softmax(0).mul(gamma)
+        sims = torch.ones(nbrs.shape).mul(1/nbrs.shape[0]).mul(gamma).cuda()
         graph.Z[src] = graph.X[src] + torch.matmul(sims.view(1,-1), prev_Z[nbrs].view(-1,graph.d))
 
     return torch.norm(graph.Z - prev_Z, 1)
@@ -42,8 +42,6 @@ if __name__ == "__main__":
 
     if config.dataset == 'cora':
         graph = CoraDataset(device=device, load=config.load or 'cora_X')
-    elif config.dataset == 'citeseer':
-        graph = CiteseerDataset(device=device, load=config.load or 'citeseer_X')
     else:
         raise ValueError
 

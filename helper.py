@@ -9,7 +9,7 @@ from settings import PICKLE_PATH, DATA_PATH
 
 
 class DataTransformer:
-    def transform_out(self, dataset, src_model, src_path, output_path):
+    def transform_out(self, dataset, src_model, src_path, output_path, dim):
         import torch
         io = open(src_path, 'r')
         if dataset == 'cora':
@@ -17,6 +17,8 @@ class DataTransformer:
             dataset = CoraDataset()
         else:
             raise ValueError
+
+        dataset.Z = torch.zeros(dataset.Z.shape[0], dim)
         
         if src_model == 'node2vec' or 'deepwalk':
             io.readline()
@@ -45,7 +47,7 @@ def normalize_elwise(*tensors):
 def main(config):
     if config.task == 'transform':
         transformer = DataTransformer()
-        transformer.transform_out(config.dataset, config.src_model, config.src_path, config.output_path)
+        transformer.transform_out(config.dataset, config.src_model, config.src_path, config.output_path, config.dim)
     else:
         raise ValueError
         
@@ -58,5 +60,6 @@ if __name__ == '__main__':
     parser.add_argument('--src_model', type=str)
     parser.add_argument('--src_path', type=str)
     parser.add_argument('--output_path', type=str)
+    parser.add_argument('--dim', type=int)
     config = parser.parse_args()
     main(config)

@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 
 from settings import DATA_PATH, PICKLE_PATH
 
-
+torch.manual_seed(0)
 class GraphDataset(Dataset):
     def __init__(self,dataset, device, sampled, load):
         X = pickle.load(open(os.path.join(PICKLE_PATH, 'embedding', load),'rb'))
@@ -24,6 +24,7 @@ class GraphDataset(Dataset):
                 src, dst = line.split(' ')
                 self.A[int(src), int(dst)] = 1
 
+        
         if sampled:
             sampled_link = open(
                     os.path.join(DATA_PATH, dataset, '{}_sampled.cites'.format(dataset))
@@ -33,29 +34,27 @@ class GraphDataset(Dataset):
                 self.A[self.id_list.index(src), self.id_list.index(dst)] = 0
                 if (self.A.sum(0).add(self.A.sum(1))==-2).nonzero().sum()!=0:
                     self.A[self.id_list.index(src), self.id_list.index(dst)] = 1
-            
-    def __getitem__(self, index):
-        return self.Z[index], self.Z[self.out_nbrs(index)], self.Z[self.non_nbrs(index)]
 
-    def split(self, test_size):
-        return train_test_split(list(range(len(self.id_list))), test_size=test_size)
-        
+    def __getitem__(self, index):
+        return self.standard_Z[index], self.standard_Z[self.out_nbrs(index)], self.standard_Z[self.non_nbrs(index)]
+
     def __len__(self):
         return self.X.shape[0]
-
-    def set_embedding(self, id_, embedding):
-        idx = self.id_list.index(id_)
-        self.Z[idx] = embedding.to(self.device)
     
+    def minmax_scale(self):
+        max_, min_ = self.Z.max(), self.Z.min()
+        self.scaled_Z = self.Z.sub(min_).div(max_-min_)
+    
+    def standard(self):
+        mean, std = self.Z.mean(), self.Z.std()
+        self.standard_Z = self.Z.sub(mean).div(std)
+
     def out_nbrs(self, index):
         return (self.A[index]==1).nonzero().view(-1)
     
     def in_nbrs(self, index):
         return (self.A.t()[index] == 1).nonzero().view(-1)
     
-    def nbrs(self, index):
-        return torch.cat([self.out_nbrs(index), self.in_nbrs(index)])
-
     def non_nbrs(self, index):
         return (self.A[index]==0).nonzero().view(-1)
 
@@ -89,11 +88,11 @@ class CoraDataset(GraphDataset):
     def __init__(self, device=torch.device('cpu'), sampled=False, load='cora_X'):
         super(CoraDataset, self).__init__('cora', device, sampled, load)
 
-class FlickrDataset(GraphDataset):
-    def __init__(self, sampled=False, **kwargs):
-        super(FlickrDataset, self).__init__('flickr', sampled, **kwargs)
+class CiteseerDataset(GraphDataset):
+    def __init__(self, device=torch.device('cpu'), sampled=False, load='citeseer_X'):
+        super(CiteseerDataset, self).__init__('citeseer', device, sampled, load)
 
 
 if __name__ == "__main__":
-    graph = CoraDataset(load='cora_deepwalk_d128')
+    graph = CiteseerDataset()
     import pdb;    pdb.set_trace()
