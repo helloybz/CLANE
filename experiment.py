@@ -11,14 +11,9 @@ from sklearn.metrics import roc_auc_score
 from torch import device
 import torch
 
-from dataset import CoraDataset, CiteseerDataset
+from graph import Graph
 from settings import DATA_PATH
 from settings import PICKLE_PATH
-
-DATASET_MAP = {
-    'cora':CoraDataset,
-    'citeseer':CiteseerDataset
-    }
 
 
 def node_classification(embeddings, labels, test_size, name, **kwargs):
@@ -113,7 +108,6 @@ def graph_reconstruction(embeddings, sim_metric, original_A, **kwargs):
 
 
 def main(config):
-    
     # load target embeddings. 
     target_paths = glob.glob(os.path.join(DATA_PATH, 
                                           'experiments', 'target',
@@ -121,12 +115,11 @@ def main(config):
 
     if config.experiment == 'node_classification':
         for target_path in target_paths:
-            labels = DATASET_MAP[os.path.basename(target_path).split('_')[0]]().Y.cpu().numpy()
-            try:
-                embedding = pickle.load(open(target_path, 'rb'))
-            except UnicodeDecodeError:
-                embedding = pickle.load(open(target_path, 'rb'), encoding='latin-1')
-
+            dataset = os.path.basename(target_path).split('_')[0]
+            if dataset == 'citeseer': continue
+            labels = Graph(dataset,True,256,torch.device('cpu')).Y
+            
+            embedding = pickle.load(open(target_path, 'rb'))
             result = node_classification(embedding, labels, test_size=config.test_size,
                                          name=os.path.basename(target_path)) 
             print('===========================')
@@ -163,7 +156,7 @@ def main(config):
                 head = model_tag.split('_iter_')[0]
                 tail = model_tag.split('_iter_')[1]
                 model_tag = f'{head}_iter_{str(int(tail)+1)}'
-
+                
                 sim_metric = torch.load(os.path.join(PICKLE_PATH, 'models', model_tag), map_location=device)
             except:
                 continue

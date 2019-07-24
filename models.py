@@ -1,7 +1,9 @@
 import torch
 from torch import nn
 
+
 torch.manual_seed(0)
+
 class EdgeProbability(nn.Module):
     def __init__(self, dim):
         super(EdgeProbability, self).__init__()
