@@ -113,7 +113,6 @@ while True:
     # Settings for model training
     min_valid_cost = inf
     
-    breakpoint()
     model = model_class(dim=g.d).to(device)
     optimizer = torch.optim.Adam(
             model.parameters(), 
