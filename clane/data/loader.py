@@ -39,7 +39,7 @@ class DatasetManager:
 
     @classmethod
     def prepare_IMAGENET(cls, f, device):
-        content_io = io.open(os.path.join(f, 'imagenet.nameurls', 'r')
+        content_io = io.open(os.path.join(f, 'imagenet.nameurls'), 'r')
 
         image_names = []
         image_urls = []

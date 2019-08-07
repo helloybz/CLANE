@@ -23,7 +23,7 @@ parser.add_argument('--tolerence_Z', type=int, default=30)
 parser.add_argument('--gamma', type=float, default=0.74)
 
 parser.add_argument('--tolerence_P', type=int, default=100)
-parser.add_argument('--structure', type=str)
+parser.add_argument('--multi', action='store_true')
 parser.add_argument('--aprx', action='store_true')
 parser.add_argument('--valid_size', type=float, default=0.1)
 parser.add_argument('--lr', type=float, default=1e-4)
@@ -105,7 +105,7 @@ context = {
     'n_P': 0,
     'n_Z': 0
 }
-model_class = models.MultiLayer if config.structure == 'multilayer' else models.SingleLayer
+model_class = models.MultiLayer if config.multi else models.SingleLayer
 
 while True:
     context['iteration'] += 1

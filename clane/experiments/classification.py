@@ -44,4 +44,5 @@ result['macro_f1'] = sum(result['macro_f1'])/30
 
 # print results
 for key in result.keys():
-    print(f'{key:9}: {result[key]}')
+    print(f'{key}: {result[key]}')
+
