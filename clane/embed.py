@@ -46,6 +46,7 @@ def train_epoch(model, train_set, optimizer, aprx):
     model.train()
     eps=1e-6
     train_cost = 0
+    breakpoint()
     for z_src, z_out, z_neg in train_set:
         optimizer.zero_grad()
         if z_out.shape[0] == 0: continue
@@ -91,7 +92,6 @@ def valid_epoch(model, valid_set, aprx):
 device = torch.device('cuda:{}'.format(config.gpu))
 writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
 eps=1e-6
-
 g = Graph(
         dataset=config.dataset,
         directed=config.directed,

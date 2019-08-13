@@ -12,9 +12,11 @@ torch.manual_seed(0)
 
 class Graph(torch.utils.data.Dataset):
     def __init__(self, dataset, directed, dim, device):
+        self.device = device
         self.node_ids, self.X, self.A, self.Y = DatasetManager().get(dataset, device)
         self.Z = self.X.clone()
-        if dim < self.X.shape[1]:
+        if (dim is not None 
+            and dim < self.X.shape[1]):
             from sklearn.decomposition import PCA
 
             pca = PCA(
@@ -37,15 +39,20 @@ class Graph(torch.utils.data.Dataset):
         self.standard_Z = self.Z.sub(mean).div(std)
 
     def out_nbrs(self, index):
-        return (self.A[index]==1).nonzero().view(-1)
-    
-    def in_nbrs(self, index):
-        return (self.A.t()[index] == 1).nonzero().view(-1)
+        return torch.tensor(self.A[index], device=self.device)
+#        return (self.A[index]==1).nonzero().view(-1)
     
     def non_nbrs(self, index):
-        return (self.A[index]==0).nonzero().view(-1)
+        return torch.tensor(
+                       [i for i in range(len(self)) if i not in self.A[index]],
+                       device=self.device
+                   )
 
     @property
     def d(self):
         return self.Z.shape[-1]
 
+
+if __name__ == '__main__':
+    g = Graph(dataset = 'ppi', directed=True, dim=None, device=torch.device('cuda:2'))
+    breakpoint()

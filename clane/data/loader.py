@@ -71,7 +71,26 @@ class DatasetManager:
         Y = torch.tensor([label_set.index(label) for label in Y])
         
         return node_ids, X.to(device), A.to(device), Y.to(device)
+        
+    @classmethod
+    def prepare_PPI(self, f, device):
+        import numpy as np 
+        X = np.load(os.path.join(f, 'ppi-feats.npy'))
+        X = torch.tensor(X, device=device, dtype=torch.float)
 
+        node_ids = [str(number) for number in range(X.shape[0])] 
+        
+        A = {i:[] for i in range(len(node_ids))}
+        import json
+        G = json.load(open(os.path.join(f, 'ppi-G.json')))
+        for link in G['links']:
+            source, target = link['source'], link['target']
+            if source == target: continue
+            A[source].append(target)
+
+        Y = json.load(open(os.path.join(f, 'ppi-class_map.json'),'r'))
+        
+        return node_ids, X, A, Y
     def get(self, dataset, device):
         if dataset == 'cora':
             return self.prepare_CORA('data/cora', device)
@@ -79,6 +98,8 @@ class DatasetManager:
             return self.prepare_CITESEER('data/citeseer', device)
         elif dataset == 'imagenet':
             return self.prepare_IMAGENET('data/imagenet', device)
+        elif dataset == 'ppi':
+            return self.prepare_PPI('data/ppi', device)
         else:
             raise ValueError
 if __name__ == '__main__':
