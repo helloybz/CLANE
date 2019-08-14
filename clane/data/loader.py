@@ -79,7 +79,6 @@ class DatasetManager:
         X = torch.tensor(X, device=device, dtype=torch.float)
 
         node_ids = [str(number) for number in range(X.shape[0])] 
-        
         A = {i:[] for i in range(len(node_ids))}
         import json
         G = json.load(open(os.path.join(f, 'ppi-G.json')))

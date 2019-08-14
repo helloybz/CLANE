@@ -39,13 +39,15 @@ class Graph(torch.utils.data.Dataset):
         self.standard_Z = self.Z.sub(mean).div(std)
 
     def out_nbrs(self, index):
-        return torch.tensor(self.A[index], device=self.device)
+        return torch.tensor(self.A[index], device=self.device, dtype=torch.long)
 #        return (self.A[index]==1).nonzero().view(-1)
     
     def non_nbrs(self, index):
         return torch.tensor(
                        [i for i in range(len(self)) if i not in self.A[index]],
-                       device=self.device
+                       device=self.device,
+                       dtype=torch.long
+
                    )
 
     @property

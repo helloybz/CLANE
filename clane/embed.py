@@ -34,11 +34,12 @@ config = parser.parse_args()
 print(config)
 
 @torch.no_grad()
-def update_embedding(graph, Pi, gamma):
+def update_embedding(graph, sim_func, gamma):
     prev_Z = graph.Z.clone()
     for src in range(len(graph)):
         nbrs = graph.out_nbrs(src)
-        graph.Z[src] = graph.X[src] + torch.matmul(Pi[src], graph.Z).mul(gamma)
+        sims = sim_func(graph.standard_Z[src], graph.standard_Z[nbrs]).softmax(0)
+        graph.Z[src] = graph.X[src] + torch.matmul(sims, graph.Z[nbrs]).mul(gamma)
     return torch.norm(graph.Z - prev_Z, 1)
 
 
@@ -46,7 +47,6 @@ def train_epoch(model, train_set, optimizer, aprx):
     model.train()
     eps=1e-6
     train_cost = 0
-    breakpoint()
     for z_src, z_out, z_neg in train_set:
         optimizer.zero_grad()
         if z_out.shape[0] == 0: continue
@@ -167,19 +167,12 @@ while True:
     tolerence = config.tolerence_Z
     min_distance = inf
 
-    # compute transition matrix.
-    Pi = g.A.clone()
-    for src in range(len(g)):
-        probs = model(g.standard_Z[src], g.standard_Z[g.out_nbrs(src)]).softmax(0)
-        for idx, prob in zip(g.out_nbrs(src),probs):
-            Pi[src,idx] = prob
-    
     # Generate the embeddings.
     while True:
         context['n_Z'] += 1
         distance = update_embedding(
                 g, 
-                Pi,
+                model.get_sims,
                 config.gamma, 
             )
         
