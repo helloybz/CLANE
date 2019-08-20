@@ -1,6 +1,7 @@
 *pickles*
 *runs*
-
+data
+*.copy
 test.py
 .idea
 data/pickles
