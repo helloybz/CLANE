@@ -3,6 +3,7 @@ import os
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
+from sklearn.multiclass import OneVsRestClassifier
 from sklearn.metrics import f1_score
 import torch
 
@@ -18,7 +19,9 @@ config = parser.parse_args()
 # load data
 embedding = torch.load(os.path.join(PICKLE_PATH, 'embeddings', config.model_tag), map_location=torch.device('cpu')).numpy()
 dataset = config.model_tag.split('_')[0]
+
 labels = Graph(dataset, True, 256, torch.device('cpu')).Y.numpy()
+
 result = dict()
 result['embedding'] = config.model_tag
 result['micro_f1'] = list()
@@ -30,7 +33,8 @@ for _ in range(30):
 
     # make classifier
     classifier = LogisticRegression(solver='lbfgs', multi_class='ovr', max_iter=1e+6, n_jobs=4)
-
+    if dataset == 'ppi':
+        classifier = OneVsRestClassifier(classifier)
     # train classifier
     classifier.fit(train_X, train_Y)
     pred = classifier.predict(test_X)

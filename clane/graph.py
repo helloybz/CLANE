@@ -13,7 +13,7 @@ torch.manual_seed(0)
 class Graph(torch.utils.data.Dataset):
     def __init__(self, dataset, directed, dim, device):
         self.device = device
-        self.node_ids, self.X, self.A, self.Y = DatasetManager().get(dataset, device)
+        self.node_ids, self.X, self.A, self.Y = DatasetManager().get(dataset, directed, device)
         self.Z = self.X.clone()
         if (dim is not None 
             and dim < self.X.shape[1]):
