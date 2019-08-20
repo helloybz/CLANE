@@ -1,200 +1,248 @@
 import argparse
 import os
-import pdb
-import pickle
+import time
 
 from numpy import inf
 from tensorboardX import SummaryWriter
 import torch
-from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch import multiprocessing as mp
 
 from graph import Graph
-import models
+from models import MultiLayer, SingleLayer
 from settings import PICKLE_PATH
-           
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, default='cora')
-parser.add_argument('--directed', action='store_true')
-parser.add_argument('--dim', type=int)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str)
+    parser.add_argument('--dim', type=int)
+    parser.add_argument('--directed', action='store_true')
+    
+    parser.add_argument('--multi', action='store_true')
+    parser.add_argument('--aprx', action='store_true')
+    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--tolerence_P', type=int, default=60)
+    parser.add_argument('--valid_size', type=float, default=0.1)
+   
+    parser.add_argument('--gamma', type=float)
+    parser.add_argument('--tolerence_Z', type=int, default=5)
+    
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--cuda', type=int)
+    parser.add_argument('--num_workers', type=int, default=0)
+    
+    config = parser.parse_args()
+    print(config)
 
-parser.add_argument('--tolerence_Z', type=int, default=30)
-parser.add_argument('--gamma', type=float, default=0.74)
+    # Build model tag.
+    model_tag = f'{config.dataset}_clane_d{config.dim}_g{config.gamma}_lr{config.lr}'
 
-parser.add_argument('--tolerence_P', type=int, default=100)
-parser.add_argument('--multi', action='store_true')
-parser.add_argument('--aprx', action='store_true')
-parser.add_argument('--valid_size', type=float, default=0.1)
-parser.add_argument('--lr', type=float, default=1e-4)
-parser.add_argument('--gpu', type=int, default=0)
-parser.add_argument('--model_tag', type=str, default='test')
+    if config.multi:
+        model_tag += '_multi'
+    else: 
+        model_tag += '_single'
 
-config = parser.parse_args()
-print(config)
+    if config.aprx:
+        model_tag += '_aprx'
+
+    if config.directed:
+        model_tag += '_directed'
+    else:
+        model_tag += '_undirected'
+    
+    # Initialize the settings.
+    cuda = torch.device(f'cuda:{config.cuda}')
+    cpu = torch.device('cpu')
+    eps= 1e-6
+    mp.set_start_method('spawn')
+    G = Graph(
+            dataset=config.dataset,
+            directed=config.directed,
+            dim=config.dim,
+            device=cuda
+    )
+    num_valid = int(len(G) * config.valid_size)
+    num_train = len(G) - num_valid
+
+    model_class = MultiLayer if config.multi else SingleLayer
+    prob_model = model_class(dim=config.dim).to(cuda)
+    prob_model.share_memory()
+
+    context = {
+        'iteration':0,
+        'n_Z':0,
+        'n_P':0
+        }
+
+    # Load TensorboardX
+    writer = SummaryWriter(log_dir=f'runs/{model_tag}')
+
 
 @torch.no_grad()
-def update_embedding(graph, sim_func, gamma):
-    prev_Z = graph.Z.clone()
-    for src in range(len(graph)):
-        nbrs = graph.out_nbrs(src)
-        sims = sim_func(graph.standard_Z[src], graph.standard_Z[nbrs]).softmax(0)
-        graph.Z[src] = graph.X[src] + torch.matmul(sims, graph.Z[nbrs]).mul(gamma)
-    return torch.norm(graph.Z - prev_Z, 1)
+def update_embedding(G, src_idx, gamma):
+    nbrs = G.out_nbrs(src_idx)
+    msg = prob_model.get_sims(G.standard_Z[src_idx], G.standard_Z[nbrs]).softmax(0)
+    updated_embedding= G.X[src_idx] + torch.matmul(msg, G.Z[nbrs]).mul(config.gamma)
+    return src_idx, updated_embedding 
 
 
-def train_epoch(model, train_set, optimizer, aprx):
-    model.train()
-    eps=1e-6
-    train_cost = 0
-    for z_src, z_out, z_neg in train_set:
-        optimizer.zero_grad()
-        if z_out.shape[0] == 0: continue
+if __name__ == '__main__':
+    # Outer iteration
+    while True:
+        context['iteration'] += 1
 
-        out_probs = model(z_src, z_out) 
-        out_probs = out_probs.masked_fill(out_probs==0, eps)
-        out_loss = out_probs.log().neg().sum()
-
-        neg_probs = model(z_src, z_neg)
-        if aprx:
-            neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
-        neg_probs = neg_probs.masked_fill(neg_probs==1, 1-eps)
-        neg_loss = (1-neg_probs).log().neg().sum()
-        total_loss = out_loss + neg_loss
-        
-        total_loss.backward()
-        optimizer.step()
-        train_cost += total_loss.item()
-    return train_cost
-
-@torch.no_grad()
-def valid_epoch(model, valid_set, aprx):
-    model.eval()
-    eps=1e-6
-    valid_cost = 0
-    for z_src, z_out, z_neg in valid_set:
-        if z_out.shape[0] == 0: continue
-        out_probs = model(z_src, z_out) 
-        out_probs = out_probs.masked_fill(out_probs==0, eps)
-        out_loss = out_probs.log().neg().sum()
-
-        neg_probs = model(z_src, z_neg)
-        if aprx:
-            neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
-        neg_probs = neg_probs.masked_fill(neg_probs==1, 1-eps)
-        neg_loss = (1-neg_probs).log().neg().sum()
-        total_loss = out_loss + neg_loss
-        valid_cost += total_loss.item()
-         
-    return valid_cost
-
-
-device = torch.device('cuda:{}'.format(config.gpu))
-writer = SummaryWriter(log_dir='runs/{}'.format(config.model_tag))
-eps=1e-6
-g = Graph(
-        dataset=config.dataset,
-        directed=config.directed,
-        dim=config.dim,
-        device=device
-)
-num_valid = int(config.valid_size * len(g))
-num_train = len(g)-num_valid
-context = {
-    'iteration': 0,
-    'n_P': 0,
-    'n_Z': 0
-}
-model_class = models.MultiLayer if config.multi else models.SingleLayer
-
-while True:
-    context['iteration'] += 1
-    
-    # Settings for model training
-    min_valid_cost = inf
-    
-    model = model_class(dim=g.d).to(device)
-    optimizer = torch.optim.Adam(
-            model.parameters(), 
-            lr=config.lr)
-    g.standardize()
-    lr_scheduler = ReduceLROnPlateau(
-            optimizer,
-            factor=0.9,
-            patience=15,
-            verbose=True,
-            eps=0,
+        tolerence_P = config.tolerence_P
+        G.standardize()
+        optimizer = torch.optim.Adam(
+                prob_model.parameters(),
+                lr=config.lr
         )
-    while True:
-        context['n_P'] += 1
+        lr_scheduler = ReduceLROnPlateau(
+                optimizer,
+                factor=0.1,
+                patience=10,
+                verbose=True,
+                eps=0
+        )
+        min_cost = inf
+        # Inner iteration 1 - Train transition matrix
+        while True:
+            context['n_P'] += 1
 
-        train_set, valid_set = torch.utils.data.random_split(
-                g, [num_train, num_valid])
-        train_cost = train_epoch(model, train_set, optimizer, config.aprx)
-        valid_cost = valid_epoch(model, valid_set, config.aprx)
-        
-        lr_scheduler.step(valid_cost)
-        
-        if min_valid_cost > valid_cost:
-            min_valid_cost = valid_cost
-            tolerence = config.tolerence_P
-            torch.save(model,
-                    os.path.join(PICKLE_PATH, 'models', f'{config.model_tag}_iter_{context["iteration"]}_temp'))
-        else:
-            tolerence -= 1
-
-        writer.add_scalars(f'{config.model_tag}/{"model_training"}',
-                {'train_cost': train_cost, 
-                 'valid_cost': valid_cost*9},
-                context['n_P'] 
-            )
-        print(f'[MODEL TRAINING] train error: {train_cost:5.5} validation error: {9*valid_cost:5.5} epoch: {context["n_P"]}, tolerence: {tolerence:3}', end='\r')
-        if tolerence == 0: 
-            model = torch.load(
-                    os.path.join(PICKLE_PATH, 'models', 
-                            f'{config.model_tag}_iter_{context["iteration"]}_temp'
-                    ),
-                    map_location=device
+            # Preparation
+            train_set, valid_set = torch.utils.data.random_split(
+                    G, 
+                    [num_train, num_valid]
                 )
-            torch.save(model,
-                    os.path.join(PICKLE_PATH, 'models', f'{config.model_tag}_iter_{context["iteration"]}'))
-            print(f'[MODEL TRAINING] {train_cost:5.5} {9*valid_cost:5.5} tol: {tolerence}')
-            break
-
-
-    ## Embedding ##
-
-    tolerence = config.tolerence_Z
-    min_distance = inf
-
-    # Generate the embeddings.
-    while True:
-        context['n_Z'] += 1
-        distance = update_embedding(
-                g, 
-                model.get_sims,
-                config.gamma, 
-            )
-        
-        if min_distance > distance:
-            min_distance = distance
-            tolerence = config.tolerence_Z
-        else:
-            tolerence -= 1
-        
-        print(f'[EMBEDDING] distance:{distance:8.5} tol:{tolerence:2}', end='\r')
-        writer.add_scalars(f'{config.model_tag}/{"embedding"}',
-                {'dist': distance},
-                context['n_Z'] 
-            )
-        if tolerence == 0:
-            torch.save(
-                    g.Z.cpu(),
-                    os.path.join(
-                            PICKLE_PATH,
-                            'embeddings', 
-                            f'{config.model_tag}_iter_{context["iteration"]}'
-                        )
+            
+            train_loader = DataLoader(
+                    train_set, 
+                    num_workers=0 if config.debug else config.num_workers
                 )
-            break
+            train_cost = 0
+            
+            # Train
+            prob_model.train()
+            for z_src, z_out, z_neg in train_loader:
+                optimizer.zero_grad()
+                z_out = z_out.squeeze(0)
+                z_neg = z_neg.squeeze(0)
+                probs = prob_model(z_src, z_out)
+                out_probs = probs.masked_fill(probs==0, eps)
+                out_cost = out_probs.log().neg().sum()
 
+                probs = prob_model(z_src, z_neg)
+                neg_probs = probs.masked_fill(probs==1, 1-eps)
+                if config.aprx:
+                    neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
+                neg_cost = (1-neg_probs).log().neg().sum()
+
+                cost = out_cost + neg_cost
+                cost.backward()
+                optimizer.step()
+                train_cost += cost
+            
+            valid_cost = 0
+            valid_loader = DataLoader(
+                    valid_set, 
+                    num_workers=0 if config.debug else config.num_workers
+                )
+
+            prob_model.eval()
+            with torch.no_grad():
+                for z_src, z_out, z_neg in valid_loader:
+                    z_out = z_out.squeeze(0)
+                    z_neg = z_neg.squeeze(0)
+                    probs = prob_model(z_src, z_out)
+                    out_probs = probs.masked_fill(probs==0, eps)
+                    out_cost = out_probs.log().neg().sum()
+
+                    probs = prob_model(z_src, z_neg)
+                    neg_probs = probs.masked_fill(probs==1, 1-eps)
+
+                    # Should the approximation be skipped while validating?
+                    if config.aprx:
+                        neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
+
+                    neg_cost = (1-neg_probs).log().neg().sum()
+
+                    cost = out_cost + neg_cost
+                    valid_cost += cost
+           
+            print(f'iter{context["iteration"]} - {context["n_P"]}\t' +
+                    f'train cost:{train_cost:10.3}\t' +
+                    f'valid_cost:{valid_cost:10.3}\t' + 
+                    f'tol:{tolerence_P:3}'
+                )
+            lr_scheduler.step(valid_cost * (1-config.valid_size)*10)
+
+            # Log on Tensorboard  
+            writer.add_scalars(
+                    f'{model_tag}/{"model_training"}',
+                    {'train_cost': train_cost,
+                     'valid_cost': valid_cost
+                     },
+                    context['n_P']
+            )
+
+            if min_cost > valid_cost:
+                min_cost = valid_cost
+                tolerence_P = config.tolerence_P
+                # Save the best model
+                torch.save(
+                        prob_model,
+                        os.path.join(PICKLE_PATH, f'{model_tag}_temp')
+                    )
+            else:
+                tolerence_P -= 1
+
+            if tolerence_P == 0:
+                # Load the best model and break the iteration
+                prob_model = torch.load(
+                        os.path.join(PICKLE_PATH, f'{model_tag}_temp'),
+                        map_location = cuda
+                )
+                prob_model.share_memory()
+                break
+       
+        # Embedding
+        tolerence_Z = config.tolerence_Z
+        min_distance = inf
+
+        # Inner Iterations - Update the embeddings.
+        while True:
+            context['n_Z'] += 1
+            previous_Z = G.Z.clone()
+            loader = DataLoader(
+                    range(len(G)), 
+                    num_workers=0 if config.debug else config.num_workers
+                )
+
+            with torch.no_grad():
+                for idx in loader:
+                    nbrs = G.out_nbrs(int(idx))
+                    if nbrs.shape[0] == 0: continue
+                    msg = prob_model.get_sims(G.standard_Z[idx].squeeze(0), G.standard_Z[nbrs]).softmax(0)
+                    G.Z[idx] = G.X[idx] + torch.matmul(msg, G.Z[nbrs]).mul(config.gamma)
+                distance = torch.norm(G.Z - previous_Z, 1)
+                writer.add_scalars(
+                        f'{model_tag}/{"embedding"}',
+                        {"dist":distance},
+                        context['n_Z']
+                )
+                print(distance, tolerence_Z) 
+            if min_distance <= distance:
+                tolerence_Z -= 1
+            else:
+                min_distance = distance
+
+            if tolerence_Z == 0:
+                torch.save(
+                        G.Z.cpu(),
+                        os.path.join(PICKLE_PATH, 'embeddings', f'{model_tag}_iter_{context["iteration"]}')
+                    )
+                break
+
+        # if embeddings are no more updated: break
+        break

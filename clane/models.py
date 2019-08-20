@@ -13,7 +13,6 @@ class BaseEdgeProbability(nn.Module):
         Bdst = self.B(z_dst)
         return torch.matmul(Asrc, Bdst.t()).sigmoid().view(-1)
 
-
     def get_sims(self, z_src, z_dst):
         Asrc = self.A(z_src)
         Bdst = self.B(z_dst)
