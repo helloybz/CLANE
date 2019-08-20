@@ -1,10 +1,11 @@
+*pickles*
+*runs*
+data
+*.copy
 test.py
 .idea
-data
-pickles
+data/pickles
 *.png
-experiments
-runs
 *.swp
 # Byte-compiled / optimized / DLL files
 __pycache__/
