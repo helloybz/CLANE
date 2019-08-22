@@ -3,10 +3,13 @@ import os
 
 import torch
 
+from settings import DATA_PATH
+
+
 class DatasetManager:
     @classmethod
-    def prepare_CORA(cls, f, directed, device):
-        content_io = io.open(os.path.join(f, 'cora.content'), 'r')
+    def prepare_CORA(cls, dataset, directed, device):
+        content_io = io.open(os.path.join(DATA_PATH, dataset, 'cora.content'), 'r')
 
         node_ids = []
         contents = []
@@ -24,7 +27,7 @@ class DatasetManager:
         X = torch.tensor(contents, device=device)
 
         A = {i:[] for i in range(len(node_ids))}
-        edge_io = io.open(os.path.join(f, 'cora.cites'), 'r')
+        edge_io = io.open(os.path.join(DATA_PATH, dataset, 'cora.cites'), 'r')
         while True:
             cite = edge_io.readline()
             if cite == '': break
@@ -75,16 +78,16 @@ class DatasetManager:
         return node_ids, X.to(device), A.to(device), Y.to(device)
         
     @classmethod
-    def prepare_PPI(self, f, directed, device):
+    def prepare_PPI(self, dataset, directed, device):
         import numpy as np 
-        X = np.load(os.path.join(f, 'ppi-feats.npy'))
+        X = np.load(os.path.join(DATA_PATH, dataset, 'ppi-feats.npy'))
         X = torch.tensor(X, device=device, dtype=torch.float)
 
         node_ids = [str(number) for number in range(X.shape[0])]
         A = {i:[] for i in range(len(node_ids))}
 
         import json
-        G = json.load(open(os.path.join(f, 'ppi-G.json')))
+        G = json.load(open(os.path.join(DATA_PATH, dataset, 'ppi-G.json')))
         for link in G['links']:
             source, target = link['source'], link['target']
             if source == target: continue
@@ -93,7 +96,7 @@ class DatasetManager:
                 A[target].append(source)
 
         Y = torch.zeros(len(node_ids),121, device=device)
-        label_dict = json.load(open(os.path.join(f, 'ppi-class_map.json'),'r'))
+        label_dict = json.load(open(os.path.join(DATA_PATH, dataset, 'ppi-class_map.json'),'r'))
         for key in label_dict.keys():
             idx = node_ids.index(key)
             Y[idx] = torch.tensor(label_dict[key], device=device)
@@ -101,13 +104,13 @@ class DatasetManager:
 
     def get(self, dataset, directed, device):
         if dataset == 'cora':
-            return self.prepare_CORA('data/cora', directed, device)
+            return self.prepare_CORA(dataset, directed, device)
         elif dataset == 'citeseer':
-            return self.prepare_CITESEER('data/citeseer', device)
+            return self.prepare_CITESEER(dataset, device)
         elif dataset == 'imagenet':
-            return self.prepare_IMAGENET('data/imagenet', device)
+            return self.prepare_IMAGENET(dataset, directed, device)
         elif dataset == 'ppi':
-            return self.prepare_PPI('data/ppi', directed, device)
+            return self.prepare_PPI(dataset, directed, device)
         else:
             raise ValueError
 

@@ -6,7 +6,7 @@ from numpy import inf
 from tensorboardX import SummaryWriter
 import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
 from torch import multiprocessing as mp
 
 from graph import Graph
@@ -22,10 +22,12 @@ if __name__ == '__main__':
     parser.add_argument('--multi', action='store_true')
     parser.add_argument('--aprx', action='store_true')
     parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--tolerence_P', type=int, default=60)
+    parser.add_argument('--decay', type=float, default=0.8)
+    parser.add_argument('--tolerence_P', type=int, default=200)
     parser.add_argument('--valid_size', type=float, default=0.1)
+    parser.add_argument('--batchsize', type=int, default=1)
    
-    parser.add_argument('--gamma', type=float)
+    parser.add_argument('--gamma', type=float, default=0.74)
     parser.add_argument('--tolerence_Z', type=int, default=5)
     
     parser.add_argument('--debug', action='store_true')
@@ -36,7 +38,7 @@ if __name__ == '__main__':
     print(config)
 
     # Build model tag.
-    model_tag = f'{config.dataset}_clane_d{config.dim}_g{config.gamma}_lr{config.lr}'
+    model_tag = f'{config.dataset}_clane_d{config.dim}_g{config.gamma}_lr{config.lr}_decay{config.decay}_batch{config.batchsize}'
 
     if config.multi:
         model_tag += '_multi'
@@ -100,7 +102,7 @@ if __name__ == '__main__':
         )
         lr_scheduler = ReduceLROnPlateau(
                 optimizer,
-                factor=0.1,
+                factor=config.decay,
                 patience=10,
                 verbose=True,
                 eps=0
@@ -115,68 +117,76 @@ if __name__ == '__main__':
                     G, 
                     [num_train, num_valid]
                 )
-            
+            from graph import collate
             train_loader = DataLoader(
                     train_set, 
-                    num_workers=0 if config.debug else config.num_workers
+                    num_workers=0 if config.debug else config.num_workers,
+                    collate_fn=collate,
+                    batch_size = config.batchsize,
+                    drop_last = True,
                 )
             train_cost = 0
             
             # Train
             prob_model.train()
-            for z_src, z_out, z_neg in train_loader:
+            start_time= time.time()
+            for idx, (z_src, z_nbrs, z_negs, nbr_mask, neg_mask) in enumerate(train_loader):
                 optimizer.zero_grad()
-                z_out = z_out.squeeze(0)
-                z_neg = z_neg.squeeze(0)
-                probs = prob_model(z_src, z_out)
-                out_probs = probs.masked_fill(probs==0, eps)
-                out_cost = out_probs.log().neg().sum()
+                probs = prob_model(z_src, z_nbrs)
+                nbr_probs = probs.masked_fill(probs==0, eps)
+                nbr_nll = nbr_probs.log().neg()
+                nbr_cost = nbr_nll.mul(nbr_mask).sum()
 
-                probs = prob_model(z_src, z_neg)
+                probs = prob_model(z_src, z_negs)
                 neg_probs = probs.masked_fill(probs==1, 1-eps)
                 if config.aprx:
-                    neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
-                neg_cost = (1-neg_probs).log().neg().sum()
-
-                cost = out_cost + neg_cost
+                    neg_mask = neg_mask.add(neg_probs.bernoulli())
+                    neg_mask = neg_mask!=0
+#                    neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
+                neg_nll = (1-neg_probs).log().neg()
+                neg_cost = neg_nll.mul(neg_mask.float()).sum()
+                
+                cost = nbr_cost + neg_cost
                 cost.backward()
                 optimizer.step()
                 train_cost += cost
-            
+                print(f'training {idx}/{int(len(train_set)/config.batchsize)}', end='\r')
+
             valid_cost = 0
             valid_loader = DataLoader(
                     valid_set, 
-                    num_workers=0 if config.debug else config.num_workers
+                    num_workers=0 if config.debug else config.num_workers,
+                    collate_fn=collate,
+                    drop_last=False,
                 )
 
             prob_model.eval()
             with torch.no_grad():
-                for z_src, z_out, z_neg in valid_loader:
-                    z_out = z_out.squeeze(0)
-                    z_neg = z_neg.squeeze(0)
+                for z_src, z_out, z_neg, nbr_mask, neg_mask in valid_loader:
                     probs = prob_model(z_src, z_out)
-                    out_probs = probs.masked_fill(probs==0, eps)
-                    out_cost = out_probs.log().neg().sum()
+                    nbr_probs = probs.masked_fill(probs==0, eps)
+                    nbr_nll = nbr_probs.log().neg()
+                    nbr_cost = nbr_nll.mul(nbr_mask).sum()
 
                     probs = prob_model(z_src, z_neg)
                     neg_probs = probs.masked_fill(probs==1, 1-eps)
-
+                    neg_nll = (1-neg_probs).log().neg()
+                    neg_cost = neg_nll.mul(neg_mask).sum()
                     # Should the approximation be skipped while validating?
-                    if config.aprx:
-                        neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
+#                    if config.aprx:
+#                        neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
 
-                    neg_cost = (1-neg_probs).log().neg().sum()
-
-                    cost = out_cost + neg_cost
+                    cost = nbr_cost + neg_cost
                     valid_cost += cost
-           
+          
+#            valid_cost = valid_cost * (1-config.valid_size)/config.valid_size
             print(f'iter{context["iteration"]} - {context["n_P"]}\t' +
-                    f'train cost:{train_cost:10.3}\t' +
-                    f'valid_cost:{valid_cost:10.3}\t' + 
-                    f'tol:{tolerence_P:3}'
+                    f'train cost:{train_cost:>10.5}\t' +
+                    f'valid_cost:{valid_cost:>10.5}\t' + 
+                    f'tol:{tolerence_P:3}\t' + 
+                    f'elapsed:{time.time()-start_time}'
                 )
-            lr_scheduler.step(valid_cost * (1-config.valid_size)*10)
-
+            lr_scheduler.step(valid_cost)
             # Log on Tensorboard  
             writer.add_scalars(
                     f'{model_tag}/{"model_training"}',
@@ -245,4 +255,4 @@ if __name__ == '__main__':
                 break
 
         # if embeddings are no more updated: break
-        break
+#        break

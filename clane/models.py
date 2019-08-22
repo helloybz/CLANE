@@ -9,9 +9,12 @@ class BaseEdgeProbability(nn.Module):
         super(BaseEdgeProbability, self).__init__()
     
     def forward(self, z_src, z_dst):
-        Asrc = self.A(z_src)
-        Bdst = self.B(z_dst)
-        return torch.matmul(Asrc, Bdst.t()).sigmoid().view(-1)
+        # z_src : B x       d
+        # z_dst : B x |N| x d
+        
+        Asrc = self.A(z_src) # B x d = Bxd X dxd
+        Bdst = self.B(z_dst) # B x |N| x d = Bx|N|xd X dxd
+        return torch.matmul(Asrc.unsqueeze(1), Bdst.transpose(-1,-2)).sigmoid().squeeze(1)
 
     def get_sims(self, z_src, z_dst):
         Asrc = self.A(z_src)
