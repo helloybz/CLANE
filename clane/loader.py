@@ -1,5 +1,6 @@
 import io
 import os
+import pickle
 
 import torch
 
@@ -102,17 +103,21 @@ class DatasetManager:
             Y[idx] = torch.tensor(label_dict[key], device=device)
         return node_ids, X, A, Y
 
-    def get(self, dataset, directed, device):
-        if dataset == 'cora':
-            return self.prepare_CORA(dataset, directed, device)
-        elif dataset == 'citeseer':
-            return self.prepare_CITESEER(dataset, device)
-        elif dataset == 'imagenet':
-            return self.prepare_IMAGENET(dataset, directed, device)
-        elif dataset == 'ppi':
-            return self.prepare_PPI(dataset, directed, device)
-        else:
-            raise ValueError
+    def get(self, dataset):
+        X = torch.load(os.path.join(DATA_PATH, dataset, 'X.pyt'))
+        A = pickle.load(open(os.path.join(DATA_PATH, dataset, 'A.pickle'),'rb'))
+        Y = torch.load(os.path.join(DATA_PATH, dataset, 'Y.pyt'))
+        return X, A, Y
+#        if dataset == 'cora':
+#            return self.prepare_CORA(dataset, directed, device)
+#        elif dataset == 'citeseer':
+#            return self.prepare_CITESEER(dataset, device)
+#        elif dataset == 'imagenet':
+#            return self.prepare_IMAGENET(dataset, directed, device)
+#        elif dataset == 'ppi':
+#            return self.prepare_PPI(dataset, directed, device)
+#        else:
+#            raise ValueError
 
 if __name__ == '__main__':
     f = 'data/cora'

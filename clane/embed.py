@@ -6,8 +6,7 @@ from numpy import inf
 from tensorboardX import SummaryWriter
 import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau, MultiStepLR
-from torch import multiprocessing as mp
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from graph import Graph
 from models import MultiLayer, SingleLayer
@@ -16,7 +15,6 @@ from settings import PICKLE_PATH
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str)
-    parser.add_argument('--dim', type=int)
     parser.add_argument('--directed', action='store_true')
     
     parser.add_argument('--multi', action='store_true')
@@ -38,7 +36,7 @@ if __name__ == '__main__':
     print(config)
 
     # Build model tag.
-    model_tag = f'{config.dataset}_clane_d{config.dim}_g{config.gamma}_lr{config.lr}_decay{config.decay}_batch{config.batchsize}'
+    model_tag = f'{config.dataset}_clane_valid{config.valid_size}_g{config.gamma}_lr{config.lr}_decay{config.decay}_batch{config.batchsize}'
 
     if config.multi:
         model_tag += '_multi'
@@ -57,19 +55,12 @@ if __name__ == '__main__':
     cuda = torch.device(f'cuda:{config.cuda}')
     cpu = torch.device('cpu')
     eps= 1e-6
-    mp.set_start_method('spawn')
     G = Graph(
             dataset=config.dataset,
             directed=config.directed,
-            dim=config.dim,
-            device=cuda
     )
     num_valid = int(len(G) * config.valid_size)
     num_train = len(G) - num_valid
-
-    model_class = MultiLayer if config.multi else SingleLayer
-    prob_model = model_class(dim=config.dim).to(cuda)
-    prob_model.share_memory()
 
     context = {
         'iteration':0,
@@ -96,16 +87,17 @@ if __name__ == '__main__':
 
         tolerence_P = config.tolerence_P
         G.standardize()
+        model_class = MultiLayer if config.multi else SingleLayer
+        prob_model = model_class(dim=G.d).to(cuda)
         optimizer = torch.optim.Adam(
                 prob_model.parameters(),
-                lr=config.lr
+                lr=config.lr,
         )
         lr_scheduler = ReduceLROnPlateau(
                 optimizer,
                 factor=config.decay,
-                patience=10,
+                patience=30,
                 verbose=True,
-                eps=0
         )
         min_cost = inf
         # Inner iteration 1 - Train transition matrix
@@ -131,6 +123,12 @@ if __name__ == '__main__':
             prob_model.train()
             start_time= time.time()
             for idx, (z_src, z_nbrs, z_negs, nbr_mask, neg_mask) in enumerate(train_loader):
+                z_src = z_src.to(cuda, non_blocking=True)
+                z_nbrs = z_nbrs.to(cuda, non_blocking=True)
+                z_negs = z_negs.to(cuda, non_blocking=True)
+                nbr_mask = nbr_mask.to(cuda, non_blocking=True)
+                neg_mask = neg_mask.to(cuda, non_blocking=True)
+
                 optimizer.zero_grad()
                 probs = prob_model(z_src, z_nbrs)
                 nbr_probs = probs.masked_fill(probs==0, eps)
@@ -142,15 +140,14 @@ if __name__ == '__main__':
                 if config.aprx:
                     neg_mask = neg_mask.add(neg_probs.bernoulli())
                     neg_mask = neg_mask!=0
-#                    neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
                 neg_nll = (1-neg_probs).log().neg()
                 neg_cost = neg_nll.mul(neg_mask.float()).sum()
                 
                 cost = nbr_cost + neg_cost
+                cost = cost.div(config.batchsize)
                 cost.backward()
                 optimizer.step()
                 train_cost += cost
-                print(f'training {idx}/{int(len(train_set)/config.batchsize)}', end='\r')
 
             valid_cost = 0
             valid_loader = DataLoader(
@@ -158,17 +155,24 @@ if __name__ == '__main__':
                     num_workers=0 if config.debug else config.num_workers,
                     collate_fn=collate,
                     drop_last=False,
+                    batch_size=config.batchsize
                 )
 
             prob_model.eval()
             with torch.no_grad():
-                for z_src, z_out, z_neg, nbr_mask, neg_mask in valid_loader:
-                    probs = prob_model(z_src, z_out)
+                for z_src, z_nbrs, z_negs, nbr_mask, neg_mask in valid_loader:
+                    z_src = z_src.to(cuda, non_blocking=True)
+                    z_nbrs = z_nbrs.to(cuda, non_blocking=True)
+                    z_negs = z_negs.to(cuda, non_blocking=True)
+                    nbr_mask = nbr_mask.to(cuda, non_blocking=True)
+                    neg_mask = neg_mask.to(cuda, non_blocking=True)
+
+                    probs = prob_model(z_src, z_nbrs)
                     nbr_probs = probs.masked_fill(probs==0, eps)
                     nbr_nll = nbr_probs.log().neg()
                     nbr_cost = nbr_nll.mul(nbr_mask).sum()
 
-                    probs = prob_model(z_src, z_neg)
+                    probs = prob_model(z_src, z_negs)
                     neg_probs = probs.masked_fill(probs==1, 1-eps)
                     neg_nll = (1-neg_probs).log().neg()
                     neg_cost = neg_nll.mul(neg_mask).sum()
@@ -184,7 +188,7 @@ if __name__ == '__main__':
                     f'train cost:{train_cost:>10.5}\t' +
                     f'valid_cost:{valid_cost:>10.5}\t' + 
                     f'tol:{tolerence_P:3}\t' + 
-                    f'elapsed:{time.time()-start_time}'
+                    f'elapsed:{time.time()-start_time:5.3}'
                 )
             lr_scheduler.step(valid_cost)
             # Log on Tensorboard  
@@ -213,7 +217,6 @@ if __name__ == '__main__':
                         os.path.join(PICKLE_PATH, f'{model_tag}_temp'),
                         map_location = cuda
                 )
-                prob_model.share_memory()
                 break
        
         # Embedding
