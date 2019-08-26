@@ -17,11 +17,11 @@ class BaseEdgeProbability(nn.Module):
         return torch.matmul(Asrc.unsqueeze(1), Bdst.transpose(-1,-2)).sigmoid().squeeze(1)
 
     def get_sims(self, z_src, z_dst):
+        
         Asrc = self.A(z_src)
         Bdst = self.B(z_dst)
-        output = torch.matmul(Asrc, Bdst.t())
-        return output.view(-1)
-
+        output = torch.matmul(Asrc.unsqueeze(1), Bdst.transpose(-1,-2))
+        return output.squeeze(1)
 
 class MultiLayer(BaseEdgeProbability):
     def __init__(self, dim):

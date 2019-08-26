@@ -4,6 +4,7 @@ import time
 
 from numpy import inf
 from tensorboardX import SummaryWriter
+
 import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -34,7 +35,6 @@ if __name__ == '__main__':
     
     config = parser.parse_args()
     print(config)
-
     # Build model tag.
     model_tag = f'{config.dataset}_clane_valid{config.valid_size}_g{config.gamma}_lr{config.lr}_decay{config.decay}_batch{config.batchsize}'
 
@@ -222,22 +222,26 @@ if __name__ == '__main__':
         # Embedding
         tolerence_Z = config.tolerence_Z
         min_distance = inf
-
+        
         # Inner Iterations - Update the embeddings.
         while True:
             context['n_Z'] += 1
             previous_Z = G.Z.clone()
+            from graph import collate
             loader = DataLoader(
-                    range(len(G)), 
-                    num_workers=0 if config.debug else config.num_workers
+                    G, 
+                    num_workers=0 if config.debug else config.num_workers,
+                    collate_fn=collate,
                 )
 
             with torch.no_grad():
-                for idx in loader:
-                    nbrs = G.out_nbrs(int(idx))
-                    if nbrs.shape[0] == 0: continue
-                    msg = prob_model.get_sims(G.standard_Z[idx].squeeze(0), G.standard_Z[nbrs]).softmax(0)
-                    G.Z[idx] = G.X[idx] + torch.matmul(msg, G.Z[nbrs]).mul(config.gamma)
+                for idx, (z_src, z_nbrs, __, nbr_mask, _) in enumerate(loader):
+                    original_z_nbrs = G.Z[G.out_nbrs(idx)].to(cuda, non_blocking=True)
+                    z_src = z_src.to(cuda, non_blocking=True)
+                    z_nbrs = z_nbrs.to(cuda, non_blocking=True)
+                    sims = prob_model.get_sims(z_src, z_nbrs).softmax(-1)
+                    G.Z[idx] = G.X[idx] + torch.matmul(sims, original_z_nbrs).mul(config.gamma).cpu()
+
                 distance = torch.norm(G.Z - previous_Z, 1)
                 writer.add_scalars(
                         f'{model_tag}/{"embedding"}',
