@@ -4,14 +4,16 @@ import time
 
 from numpy import inf
 from tensorboardX import SummaryWriter
-
 import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+import torch.multiprocessing as mp
 
 from graph import Graph
+from graph import collate
 from models import MultiLayer, SingleLayer
 from settings import PICKLE_PATH
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -32,7 +34,8 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--cuda', type=int)
     parser.add_argument('--num_workers', type=int, default=0)
-    
+
+    mp.set_start_method('fork')
     config = parser.parse_args()
     print(config)
     # Build model tag.
@@ -50,7 +53,7 @@ if __name__ == '__main__':
         model_tag += '_directed'
     else:
         model_tag += '_undirected'
-    
+    if config.debug: breakpoint() 
     # Initialize the settings.
     cuda = torch.device(f'cuda:{config.cuda}')
     cpu = torch.device('cpu')
@@ -78,7 +81,6 @@ def update_embedding(G, src_idx, gamma):
     msg = prob_model.get_sims(G.standard_Z[src_idx], G.standard_Z[nbrs]).softmax(0)
     updated_embedding= G.X[src_idx] + torch.matmul(msg, G.Z[nbrs]).mul(config.gamma)
     return src_idx, updated_embedding 
-
 
 if __name__ == '__main__':
     # Outer iteration
@@ -109,13 +111,13 @@ if __name__ == '__main__':
                     G, 
                     [num_train, num_valid]
                 )
-            from graph import collate
             train_loader = DataLoader(
                     train_set, 
                     num_workers=0 if config.debug else config.num_workers,
                     collate_fn=collate,
                     batch_size = config.batchsize,
                     drop_last = True,
+                    pin_memory=True
                 )
             train_cost = 0
             
@@ -123,12 +125,14 @@ if __name__ == '__main__':
             prob_model.train()
             start_time= time.time()
             for idx, (z_src, z_nbrs, z_negs, nbr_mask, neg_mask) in enumerate(train_loader):
+                batch_train_start = time.time()
                 z_src = z_src.to(cuda, non_blocking=True)
                 z_nbrs = z_nbrs.to(cuda, non_blocking=True)
                 z_negs = z_negs.to(cuda, non_blocking=True)
                 nbr_mask = nbr_mask.to(cuda, non_blocking=True)
                 neg_mask = neg_mask.to(cuda, non_blocking=True)
-
+                data_transfer_time = time.time() - batch_train_start
+                
                 optimizer.zero_grad()
                 probs = prob_model(z_src, z_nbrs)
                 nbr_probs = probs.masked_fill(probs==0, eps)
@@ -148,6 +152,8 @@ if __name__ == '__main__':
                 cost.backward()
                 optimizer.step()
                 train_cost += cost
+                batch_train_end = time.time() - batch_train_start
+                print(f'{batch_train_end}/{data_transfer_time}')
 
             valid_cost = 0
             valid_loader = DataLoader(
@@ -155,7 +161,8 @@ if __name__ == '__main__':
                     num_workers=0 if config.debug else config.num_workers,
                     collate_fn=collate,
                     drop_last=False,
-                    batch_size=config.batchsize
+                    batch_size=config.batchsize,
+                    pin_memory=True
                 )
 
             prob_model.eval()
@@ -227,7 +234,6 @@ if __name__ == '__main__':
         while True:
             context['n_Z'] += 1
             previous_Z = G.Z.clone()
-            from graph import collate
             loader = DataLoader(
                     G, 
                     num_workers=0 if config.debug else config.num_workers,

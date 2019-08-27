@@ -42,6 +42,8 @@ class Graph(torch.utils.data.Dataset):
 
 
 def collate(samples):
+    import time
+    start_time = time.time()
     batch_z_src = list()
     batch_z_nbrs = list()
     batch_z_negs = list()
@@ -61,6 +63,7 @@ def collate(samples):
     batch_z_negs = torch.stack(batch_z_negs)
     nbr_mask = (batch_z_nbrs[:,:,0]!=-10).float()
     neg_mask = (batch_z_negs[:,:,0]!=-10).float()
+    print(f'Collation time: {time.time()-start_time} at {os.getpid()}')
     return batch_z_src, batch_z_nbrs, batch_z_negs, nbr_mask, neg_mask
 
 
