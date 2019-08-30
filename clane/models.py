@@ -14,14 +14,13 @@ class BaseEdgeProbability(nn.Module):
         
         Asrc = self.A(z_src) # B x d = Bxd X dxd
         Bdst = self.B(z_dst) # B x |N| x d = Bx|N|xd X dxd
-        return torch.matmul(Asrc.unsqueeze(1), Bdst.transpose(-1,-2)).sigmoid().squeeze(1)
+        return torch.matmul(Asrc, Bdst.t()).sigmoid()
 
     def get_sims(self, z_src, z_dst):
-        
         Asrc = self.A(z_src)
         Bdst = self.B(z_dst)
-        output = torch.matmul(Asrc.unsqueeze(1), Bdst.transpose(-1,-2))
-        return output.squeeze(1)
+        output = torch.matmul(Asrc, Bdst.t())
+        return output
 
 class MultiLayer(BaseEdgeProbability):
     def __init__(self, dim):
@@ -42,7 +41,11 @@ class MultiLayer(BaseEdgeProbability):
 class SingleLayer(BaseEdgeProbability):
     def __init__(self, dim):
         super(SingleLayer, self).__init__(dim)
-
         self.A = nn.Linear(dim, dim)
         self.B = nn.Linear(dim, dim)
+    
+    def forward(self, z_src, z_dst):
+        Asrc = self.A(z_src)
+        Bdst = self.B(z_dst)
+        return torch.matmul(Asrc.unsqueeze(1), Bdst.transpose(-1,-2)).squeeze(1).sigmoid()
 

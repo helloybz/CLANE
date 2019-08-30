@@ -7,7 +7,6 @@ from tensorboardX import SummaryWriter
 import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-import torch.multiprocessing as mp
 
 from graph import Graph
 from graph import collate
@@ -20,31 +19,24 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str)
     parser.add_argument('--directed', action='store_true')
     
-    parser.add_argument('--multi', action='store_true')
     parser.add_argument('--aprx', action='store_true')
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--decay', type=float, default=0.8)
     parser.add_argument('--tolerence_P', type=int, default=200)
     parser.add_argument('--valid_size', type=float, default=0.1)
     parser.add_argument('--batchsize', type=int, default=1)
-   
+     
     parser.add_argument('--gamma', type=float, default=0.74)
     parser.add_argument('--tolerence_Z', type=int, default=5)
-    
+     
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--cuda', type=int)
-    parser.add_argument('--num_workers', type=int, default=0)
-
-    mp.set_start_method('fork')
+    
     config = parser.parse_args()
     print(config)
     # Build model tag.
+    #TODO: Separate model_tag buidling function.
     model_tag = f'{config.dataset}_clane_valid{config.valid_size}_g{config.gamma}_lr{config.lr}_decay{config.decay}_batch{config.batchsize}'
-
-    if config.multi:
-        model_tag += '_multi'
-    else: 
-        model_tag += '_single'
 
     if config.aprx:
         model_tag += '_aprx'
@@ -53,7 +45,9 @@ if __name__ == '__main__':
         model_tag += '_directed'
     else:
         model_tag += '_undirected'
+    
     if config.debug: breakpoint() 
+
     # Initialize the settings.
     cuda = torch.device(f'cuda:{config.cuda}')
     cpu = torch.device('cpu')
@@ -89,8 +83,7 @@ if __name__ == '__main__':
 
         tolerence_P = config.tolerence_P
         G.standardize()
-        model_class = MultiLayer if config.multi else SingleLayer
-        prob_model = model_class(dim=G.d).to(cuda)
+        prob_model = SingleLayer(dim=G.d).to(cuda)
         optimizer = torch.optim.Adam(
                 prob_model.parameters(),
                 lr=config.lr,
@@ -102,10 +95,11 @@ if __name__ == '__main__':
                 verbose=True,
         )
         min_cost = inf
+
         # Inner iteration 1 - Train transition matrix
         while True:
             context['n_P'] += 1
-
+            
             # Preparation
             train_set, valid_set = torch.utils.data.random_split(
                     G, 
@@ -113,14 +107,14 @@ if __name__ == '__main__':
                 )
             train_loader = DataLoader(
                     train_set, 
-                    num_workers=0 if config.debug else config.num_workers,
                     collate_fn=collate,
-                    batch_size = config.batchsize,
-                    drop_last = True,
-                    pin_memory=True
+                    batch_size=config.batchsize,
+                    drop_last=True,
+                    num_workers=int(os.cpu_count()/2),
+                    pin_memory=True,
                 )
             train_cost = 0
-            
+             
             # Train
             prob_model.train()
             start_time= time.time()
@@ -134,15 +128,15 @@ if __name__ == '__main__':
                 data_transfer_time = time.time() - batch_train_start
                 
                 optimizer.zero_grad()
-                probs = prob_model(z_src, z_nbrs)
-                nbr_probs = probs.masked_fill(probs==0, eps)
+                nbr_probs = prob_model(z_src, z_nbrs)
+                nbr_probs = nbr_probs.masked_fill(nbr_probs.clone().detach()==0, eps)
                 nbr_nll = nbr_probs.log().neg()
                 nbr_cost = nbr_nll.mul(nbr_mask).sum()
-
-                probs = prob_model(z_src, z_negs)
-                neg_probs = probs.masked_fill(probs==1, 1-eps)
+                
+                neg_probs = prob_model(z_src, z_negs)
+                neg_probs = neg_probs.masked_fill(neg_probs.clone().detach()==1,1-eps)
                 if config.aprx:
-                    neg_mask = neg_mask.add(neg_probs.bernoulli())
+                    neg_mask = neg_mask.add(neg_probs.clone().detach().bernoulli())
                     neg_mask = neg_mask!=0
                 neg_nll = (1-neg_probs).log().neg()
                 neg_cost = neg_nll.mul(neg_mask.float()).sum()
@@ -153,18 +147,16 @@ if __name__ == '__main__':
                 optimizer.step()
                 train_cost += cost
                 batch_train_end = time.time() - batch_train_start
-                print(f'{batch_train_end}/{data_transfer_time}')
-
+            
             valid_cost = 0
             valid_loader = DataLoader(
                     valid_set, 
-                    num_workers=0 if config.debug else config.num_workers,
                     collate_fn=collate,
                     drop_last=False,
                     batch_size=config.batchsize,
+                    num_workers=int(os.cpu_count()),
                     pin_memory=True
                 )
-
             prob_model.eval()
             with torch.no_grad():
                 for z_src, z_nbrs, z_negs, nbr_mask, neg_mask in valid_loader:

@@ -12,12 +12,13 @@ from settings import DATA_PATH, PICKLE_PATH
 torch.manual_seed(0)
 
 class Graph(torch.utils.data.Dataset):
-    def __init__(self, dataset, directed):
-        self.X, self.A, self.Y = DatasetManager().get(dataset)
+    def __init__(self, dataset, directed, device=torch.device('cpu')):
+        self.X, self.A, self.Y = DatasetManager().get(dataset, device)
         self.Z = self.X.clone()
 
     def __getitem__(self, index):
-        return self.standard_Z[index], self.standard_Z[self.out_nbrs(index)], self.standard_Z[self.non_nbrs(index)]
+        return self.Z[index], self.Z[self.out_nbrs(index)], self.Z[self.non_nbrs(index)]
+#        return self.standard_Z[index], self.standard_Z[self.out_nbrs(index)], self.standard_Z[self.non_nbrs(index)]
 
     def __len__(self):
         return self.X.shape[0]
@@ -31,6 +32,7 @@ class Graph(torch.utils.data.Dataset):
 #        return (self.A[index]==1).nonzero().view(-1)
     
     def non_nbrs(self, index):
+        # TODO: remove 기반 방법으로 변경
         return torch.tensor(
                        [i for i in range(len(self)) if i not in self.A[index]],
                        dtype=torch.long
@@ -42,13 +44,13 @@ class Graph(torch.utils.data.Dataset):
 
 
 def collate(samples):
-    import time
-    start_time = time.time()
+    #TODO: collate the samples whose neighbor node exist at least one.
     batch_z_src = list()
     batch_z_nbrs = list()
     batch_z_negs = list()
     max_nbrs, max_negs = 0, 0
     for z_src, z_nbrs, z_negs in samples:
+        if z_nbrs.shape[0] == 0: continue
         batch_z_src.append(z_src)
         batch_z_nbrs.append(z_nbrs)
         max_nbrs = max(max_nbrs, z_nbrs.shape[0])
@@ -63,7 +65,6 @@ def collate(samples):
     batch_z_negs = torch.stack(batch_z_negs)
     nbr_mask = (batch_z_nbrs[:,:,0]!=-10).float()
     neg_mask = (batch_z_negs[:,:,0]!=-10).float()
-    print(f'Collation time: {time.time()-start_time} at {os.getpid()}')
     return batch_z_src, batch_z_nbrs, batch_z_negs, nbr_mask, neg_mask
 
 
