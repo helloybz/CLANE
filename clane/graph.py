@@ -44,7 +44,6 @@ class Graph(torch.utils.data.Dataset):
 
 
 def collate(samples):
-    #TODO: collate the samples whose neighbor node exist at least one.
     batch_z_src = list()
     batch_z_nbrs = list()
     batch_z_negs = list()
@@ -56,7 +55,7 @@ def collate(samples):
         max_nbrs = max(max_nbrs, z_nbrs.shape[0])
         batch_z_negs.append(z_negs)
         max_negs = max(max_negs, z_negs.shape[0])
-
+    if len(batch_z_src) == 0: return (torch.ones(1,1) for i in range(5))
     batch_z_src = torch.stack(batch_z_src)
     dim = batch_z_src.shape[-1]
     batch_z_nbrs = [pad(z_nbrs, (0,0,0,max_nbrs-z_nbrs.shape[0]), value=-10) for z_nbrs in batch_z_nbrs]

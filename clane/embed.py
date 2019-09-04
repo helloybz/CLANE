@@ -98,6 +98,7 @@ if __name__ == '__main__':
 
         # Inner iteration 1 - Train transition matrix
         while True:
+            break
             context['n_P'] += 1
             
             # Preparation
@@ -228,18 +229,20 @@ if __name__ == '__main__':
             previous_Z = G.Z.clone()
             loader = DataLoader(
                     G, 
-                    num_workers=0 if config.debug else config.num_workers,
+                    num_workers=0 if config.debug else os.cpu_count(),
                     collate_fn=collate,
+                    pin_memory=True
                 )
 
             with torch.no_grad():
                 for idx, (z_src, z_nbrs, __, nbr_mask, _) in enumerate(loader):
+                    if z_src.shape == (1,1):continue
                     original_z_nbrs = G.Z[G.out_nbrs(idx)].to(cuda, non_blocking=True)
                     z_src = z_src.to(cuda, non_blocking=True)
                     z_nbrs = z_nbrs.to(cuda, non_blocking=True)
                     sims = prob_model.get_sims(z_src, z_nbrs).softmax(-1)
                     G.Z[idx] = G.X[idx] + torch.matmul(sims, original_z_nbrs).mul(config.gamma).cpu()
-
+                breakpoint()
                 distance = torch.norm(G.Z - previous_Z, 1)
                 writer.add_scalars(
                         f'{model_tag}/{"embedding"}',

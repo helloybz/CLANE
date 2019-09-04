@@ -49,3 +49,8 @@ class SingleLayer(BaseEdgeProbability):
         Bdst = self.B(z_dst)
         return torch.matmul(Asrc.unsqueeze(1), Bdst.transpose(-1,-2)).squeeze(1).sigmoid()
 
+    def get_sims(self, z_src, z_dst):
+        Asrc = self.A(z_src)
+        Bdst = self.B(z_dst)
+        output = torch.matmul(Asrc.unsqueeze(1), Bdst.transpose(-1,-2)).squeeze(1)
+        return output
