@@ -1,266 +1,161 @@
 import argparse
-import os
-import time
 
 from numpy import inf
-from tensorboardX import SummaryWriter
 import torch
-from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from graph import Graph
-from graph import collate
-from models import MultiLayer, SingleLayer
-from settings import PICKLE_PATH
+from manager import Manager
+from models import Similarity
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str)
-    parser.add_argument('--directed', action='store_true')
-    
-    parser.add_argument('--aprx', action='store_true')
-    parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--decay', type=float, default=0.8)
-    parser.add_argument('--tolerence_P', type=int, default=200)
-    parser.add_argument('--valid_size', type=float, default=0.1)
-    parser.add_argument('--batchsize', type=int, default=1)
-     
-    parser.add_argument('--gamma', type=float, default=0.74)
-    parser.add_argument('--tolerence_Z', type=int, default=5)
-     
-    parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--cuda', type=int)
-    
-    config = parser.parse_args()
-    print(config)
-    # Build model tag.
-    #TODO: Separate model_tag buidling function.
-    model_tag = f'{config.dataset}_clane_valid{config.valid_size}_g{config.gamma}_lr{config.lr}_decay{config.decay}_batch{config.batchsize}'
+parser = argparse.ArgumentParser()
+parser.add_argument('--test_period', type=int, default=0)
+parser.add_argument('--dataset', type=str)
+parser.add_argument('--reduce_factor', type=float, default=0.8)
+parser.add_argument('--lr', type=float, default=1e-5)
+parser.add_argument('--reduce_tol', type=int, default=30)
+parser.add_argument('--tol_P', type=int, default=100)
+parser.add_argument('--tol_Z', type=int, default=100)
+parser.add_argument('--aprx', action='store_true', default=False)
+parser.add_argument('--gamma', type=float, default=0.76)
+parser.add_argument('--gpu', type=int)
+config = parser.parse_args()
 
-    if config.aprx:
-        model_tag += '_aprx'
-
-    if config.directed:
-        model_tag += '_directed'
-    else:
-        model_tag += '_undirected'
-    
-    if config.debug: breakpoint() 
-
-    # Initialize the settings.
-    cuda = torch.device(f'cuda:{config.cuda}')
-    cpu = torch.device('cpu')
-    eps= 1e-6
-    G = Graph(
-            dataset=config.dataset,
-            directed=config.directed,
+def train_transition_matrix(model, dataset, **settings):
+    optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=settings['lr'],
     )
-    num_valid = int(len(G) * config.valid_size)
-    num_train = len(G) - num_valid
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            factor=settings['reduce_factor'],
+            patience=settings['reduce_tol'],
+            verbose=True,
+    )
+    loader = torch.utils.data.DataLoader(
+        graph, 
+        pin_memory=True,
+    )
+    device = settings['device']
+    loss = torch.nn.BCELoss()
+    tol = settings['tol']
+    min_cost = inf
+    epoch_counter = 0
+    import time; start_time = time.time()
 
-    context = {
-        'iteration':0,
-        'n_Z':0,
-        'n_P':0
-        }
+    while tol != 0:
+        epoch_counter += 1
+        cost = 0
+        for idx, (z_src, z_nbrs, z_negs) in enumerate(loader):
+            if z_nbrs.shape[1] == 0: continue
+            z_src = z_src.to(device, non_blocking=True)
+            z_nbrs = z_nbrs.to(device, non_blocking=True)
+            z_negs = z_negs.to(device, non_blocking=True)
+            z_nbrs.squeeze_(0)
+            z_negs.squeeze_(0)
+            optimizer.zero_grad()
+            sim_nbrs = model(z_src, z_nbrs)
+            probs_nbrs = sim_nbrs.sigmoid()
+            probs_nbrs = probs_nbrs.masked_fill(probs_nbrs==0, 1e-6)
 
-    # Load TensorboardX
-    writer = SummaryWriter(log_dir=f'runs/{model_tag}')
+            sim_negs = model(z_src, z_negs)
+            probs_negs = sim_negs.sigmoid()
+            probs_negs = probs_negs.masked_fill(probs_negs==1, 1-1e-6)
+            if settings['aprx']:
+                probs_negs = probs_negs.masked_select(probs_negs.bernoulli().byte())
 
+            loss_nbrs = loss(probs_nbrs, probs_nbrs.new_ones(probs_nbrs.shape))
+            loss_negs = loss(probs_negs, probs_negs.new_ones(probs_negs.shape))
+            total_loss =loss_nbrs + loss_negs
+            total_loss.backward()
+            cost += total_loss.item()
+            optimizer.step()
+            print(idx, cost, end='\r')
+        lr_scheduler.step(cost)
+        if min_cost > cost:
+            min_cost = cost
+            tol = settings['tol']
+        else:
+            tol -= 1
+        
+        print(cost, tol, time.time() - start_time)
+    return epoch_counter
 
 @torch.no_grad()
-def update_embedding(G, src_idx, gamma):
-    nbrs = G.out_nbrs(src_idx)
-    msg = prob_model.get_sims(G.standard_Z[src_idx], G.standard_Z[nbrs]).softmax(0)
-    updated_embedding= G.X[src_idx] + torch.matmul(msg, G.Z[nbrs]).mul(config.gamma)
-    return src_idx, updated_embedding 
+def update_embeddings(model, graph, **settings):
+    tol = settings['tol']
+    device = settings['device']
+    min_distance = inf
+    initial_Z = graph.Z.clone() # used for compute transition probs.
+    while tol != 0:
+        prev_Z= graph.Z.clone()
+        for node_idx in range(len(graph)):
+            z_src = prev_Z[node_idx].to(device)
+            z_nbrs = prev_Z[graph.A[node_idx]].to(device)
+            init_z_src = initial_Z[node_idx].to(device)
+            init_z_nbrs = initial_Z[graph.A[node_idx]].to(device)
+            weights = model(init_z_src, init_z_nbrs).softmax(0)
+            new_embedding = \
+                graph.X[node_idx].to(device) \
+                + torch.matmul(weights, z_nbrs).mul(settings['gamma'])
+            graph.Z[node_idx] = new_embedding.cpu()
+        distance = torch.norm(graph.Z - prev_Z, 1)
+        if distance == 0: return 0
+        if min_distance > distance:
+            min_distance = distance
+            tol = settings['tol']
+        else:
+            tol -= 1
+        print(distance, tol, end='\r')
+    return 0
+
 
 if __name__ == '__main__':
-    # Outer iteration
-    while True:
-        context['iteration'] += 1
-
-        tolerence_P = config.tolerence_P
-        G.standardize()
-        prob_model = SingleLayer(dim=G.d).to(cuda)
-        optimizer = torch.optim.Adam(
-                prob_model.parameters(),
-                lr=config.lr,
-        )
-        lr_scheduler = ReduceLROnPlateau(
-                optimizer,
-                factor=config.decay,
-                patience=30,
-                verbose=True,
-        )
-        min_cost = inf
-
-        # Inner iteration 1 - Train transition matrix
-        while True:
-            break
-            context['n_P'] += 1
-            
-            # Preparation
-            train_set, valid_set = torch.utils.data.random_split(
-                    G, 
-                    [num_train, num_valid]
-                )
-            train_loader = DataLoader(
-                    train_set, 
-                    collate_fn=collate,
-                    batch_size=config.batchsize,
-                    drop_last=True,
-                    num_workers=int(os.cpu_count()/2),
-                    pin_memory=True,
-                )
-            train_cost = 0
-             
-            # Train
-            prob_model.train()
-            start_time= time.time()
-            for idx, (z_src, z_nbrs, z_negs, nbr_mask, neg_mask) in enumerate(train_loader):
-                batch_train_start = time.time()
-                z_src = z_src.to(cuda, non_blocking=True)
-                z_nbrs = z_nbrs.to(cuda, non_blocking=True)
-                z_negs = z_negs.to(cuda, non_blocking=True)
-                nbr_mask = nbr_mask.to(cuda, non_blocking=True)
-                neg_mask = neg_mask.to(cuda, non_blocking=True)
-                data_transfer_time = time.time() - batch_train_start
-                
-                optimizer.zero_grad()
-                nbr_probs = prob_model(z_src, z_nbrs)
-                nbr_probs = nbr_probs.masked_fill(nbr_probs.clone().detach()==0, eps)
-                nbr_nll = nbr_probs.log().neg()
-                nbr_cost = nbr_nll.mul(nbr_mask).sum()
-                
-                neg_probs = prob_model(z_src, z_negs)
-                neg_probs = neg_probs.masked_fill(neg_probs.clone().detach()==1,1-eps)
-                if config.aprx:
-                    neg_mask = neg_mask.add(neg_probs.clone().detach().bernoulli())
-                    neg_mask = neg_mask!=0
-                neg_nll = (1-neg_probs).log().neg()
-                neg_cost = neg_nll.mul(neg_mask.float()).sum()
-                
-                cost = nbr_cost + neg_cost
-                cost = cost.div(config.batchsize)
-                cost.backward()
-                optimizer.step()
-                train_cost += cost
-                batch_train_end = time.time() - batch_train_start
-            
-            valid_cost = 0
-            valid_loader = DataLoader(
-                    valid_set, 
-                    collate_fn=collate,
-                    drop_last=False,
-                    batch_size=config.batchsize,
-                    num_workers=int(os.cpu_count()),
-                    pin_memory=True
-                )
-            prob_model.eval()
-            with torch.no_grad():
-                for z_src, z_nbrs, z_negs, nbr_mask, neg_mask in valid_loader:
-                    z_src = z_src.to(cuda, non_blocking=True)
-                    z_nbrs = z_nbrs.to(cuda, non_blocking=True)
-                    z_negs = z_negs.to(cuda, non_blocking=True)
-                    nbr_mask = nbr_mask.to(cuda, non_blocking=True)
-                    neg_mask = neg_mask.to(cuda, non_blocking=True)
-
-                    probs = prob_model(z_src, z_nbrs)
-                    nbr_probs = probs.masked_fill(probs==0, eps)
-                    nbr_nll = nbr_probs.log().neg()
-                    nbr_cost = nbr_nll.mul(nbr_mask).sum()
-
-                    probs = prob_model(z_src, z_negs)
-                    neg_probs = probs.masked_fill(probs==1, 1-eps)
-                    neg_nll = (1-neg_probs).log().neg()
-                    neg_cost = neg_nll.mul(neg_mask).sum()
-                    # Should the approximation be skipped while validating?
-#                    if config.aprx:
-#                        neg_probs = neg_probs.masked_select(neg_probs.bernoulli().byte())
-
-                    cost = nbr_cost + neg_cost
-                    valid_cost += cost
-          
-#            valid_cost = valid_cost * (1-config.valid_size)/config.valid_size
-            print(f'iter{context["iteration"]} - {context["n_P"]}\t' +
-                    f'train cost:{train_cost:>10.5}\t' +
-                    f'valid_cost:{valid_cost:>10.5}\t' + 
-                    f'tol:{tolerence_P:3}\t' + 
-                    f'elapsed:{time.time()-start_time:5.3}'
-                )
-            lr_scheduler.step(valid_cost)
-            # Log on Tensorboard  
-            writer.add_scalars(
-                    f'{model_tag}/{"model_training"}',
-                    {'train_cost': train_cost,
-                     'valid_cost': valid_cost
-                     },
-                    context['n_P']
-            )
-
-            if min_cost > valid_cost:
-                min_cost = valid_cost
-                tolerence_P = config.tolerence_P
-                # Save the best model
-                torch.save(
-                        prob_model,
-                        os.path.join(PICKLE_PATH, f'{model_tag}_temp')
-                    )
-            else:
-                tolerence_P -= 1
-
-            if tolerence_P == 0:
-                # Load the best model and break the iteration
-                prob_model = torch.load(
-                        os.path.join(PICKLE_PATH, f'{model_tag}_temp'),
-                        map_location = cuda
-                )
-                break
-       
-        # Embedding
-        tolerence_Z = config.tolerence_Z
-        min_distance = inf
+    # Outer Iteration
+    manager = Manager(
+        test_period = config.test_period 
+    )
+    graph = Graph(
+        dataset = config.dataset
+    )
+    device = torch.device('cpu' if config.gpu is None else f'cuda:{config.gpu}')
+    
+    while True: 
+        similarity = Similarity(graph.dim).to(device) 
+        manager.increase_iter()
         
-        # Inner Iterations - Update the embeddings.
-        while True:
-            context['n_Z'] += 1
-            previous_Z = G.Z.clone()
-            loader = DataLoader(
-                    G, 
-                    num_workers=0 if config.debug else os.cpu_count(),
-                    collate_fn=collate,
-                    pin_memory=True
-                )
+        train_transition_matrix(
+            model = similarity,
+            dataset = graph,
+            **{'lr': config.lr,
+             'reduce_factor': config.reduce_factor,
+             'reduce_tol': config.reduce_tol,
+             'tol': config.tol_P,
+             'aprx': config.aprx,
+             'device': device
+            }
+        )
+        update_embeddings(
+            model = similarity,
+            graph = graph,
+            **{
+                'gamma': config.gamma,
+                'tol': config.tol_Z,
+                'device': device
+            }
+        )
+        
+        print(manager.current_iteration)
+        if manager.is_time_to_test():
+            from experiments import NodeClassification
+            tester = NodeClassification(
+                X = graph.Z,
+                Y = graph.Y,
+                test_size = 0.8
+            )
+            tester.train()
+            print('Classification Test at {manager.current_iteration}')
+            result = tester.test()
+            for key in result:
+                print(f'{key}: {result[key]}')
 
-            with torch.no_grad():
-                for idx, (z_src, z_nbrs, __, nbr_mask, _) in enumerate(loader):
-                    if z_src.shape == (1,1):continue
-                    original_z_nbrs = G.Z[G.out_nbrs(idx)].to(cuda, non_blocking=True)
-                    z_src = z_src.to(cuda, non_blocking=True)
-                    z_nbrs = z_nbrs.to(cuda, non_blocking=True)
-                    sims = prob_model.get_sims(z_src, z_nbrs).softmax(-1)
-                    G.Z[idx] = G.X[idx] + torch.matmul(sims, original_z_nbrs).mul(config.gamma).cpu()
-                breakpoint()
-                distance = torch.norm(G.Z - previous_Z, 1)
-                writer.add_scalars(
-                        f'{model_tag}/{"embedding"}',
-                        {"dist":distance},
-                        context['n_Z']
-                )
-                print(distance, tolerence_Z) 
-            if min_distance <= distance:
-                tolerence_Z -= 1
-            else:
-                min_distance = distance
-
-            if tolerence_Z == 0:
-                torch.save(
-                        G.Z.cpu(),
-                        os.path.join(PICKLE_PATH, 'embeddings', f'{model_tag}_iter_{context["iteration"]}')
-                    )
-                break
-
-        # if embeddings are no more updated: break
-#        break
