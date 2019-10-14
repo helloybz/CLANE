@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-
 torch.manual_seed(0)
+
 
 class Similarity(nn.Module):
     def __init__(self, dim):
@@ -14,7 +14,7 @@ class Similarity(nn.Module):
         return torch.matmul(self.A(z_src), self.B(z_tgt).t())
 
 
-#class BaseEdgeProbability(nn.Module):
+# class BaseEdgeProbability(nn.Module):
 #    def __init__(self, dim):
 #        super(BaseEdgeProbability, self).__init__()
 #    
@@ -32,7 +32,7 @@ class Similarity(nn.Module):
 #        output = torch.matmul(Asrc, Bdst.t())
 #        return output
 #
-#class MultiLayer(BaseEdgeProbability):
+# class MultiLayer(BaseEdgeProbability):
 #    def __init__(self, dim):
 #        super(MultiLayer, self).__init__(dim)
 #
@@ -48,7 +48,7 @@ class Similarity(nn.Module):
 #        )
 #
 #
-#class SingleLayer(BaseEdgeProbability):
+# class SingleLayer(BaseEdgeProbability):
 #    def __init__(self, dim):
 #        super(SingleLayer, self).__init__(dim)
 #        self.A = nn.Linear(dim, dim)

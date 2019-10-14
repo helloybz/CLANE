@@ -11,7 +11,6 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torch.multiprocessing as mp
 
 from graph import Graph
-from graph import collate
 from models import MultiLayer, SingleLayer
 from settings import PICKLE_PATH
 
@@ -20,7 +19,6 @@ def train_model(model, config, cost_list, cuda):
     start_time = time.time()
     G = Graph(
             dataset=config.dataset,
-            directed=config.directed,
             device=torch.device(f'cuda:{config.cuda}')
     )
     
