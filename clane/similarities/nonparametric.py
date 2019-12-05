@@ -11,6 +11,5 @@ class CosineSimilarity(nn.Module, NonParametric):
     def __init__(self):
         super(CosineSimilarity, self).__init__()
 
-    def forward(self, v_src, v_dst):
-        breakpoint()
-        return 0
+    def forward(self, z_src, z_dst):
+        return nn.CosineSimilarity(dim=-1)(z_src, z_dst)

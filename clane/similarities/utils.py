@@ -1,7 +1,7 @@
 def get_similarity(measure, **kwargs):
     if measure == 'cosine':
-        from .nonparametric import Cosine
-        return Cosine()
+        from .nonparametric import CosineSimilarity
+        return CosineSimilarity()
 
     elif measure == 'ASS':
         from .parametric import AsymmetricSingleScalar

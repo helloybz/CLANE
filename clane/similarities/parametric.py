@@ -14,5 +14,5 @@ class AsymmetricSingleScalar(nn.Module, Parametric):
         self.A = nn.Linear(dim, dim)
         self.B = nn.Linear(dim, dim)
 
-    def forward(self, v_src, v_dst):
-        return self.A(v_src).matmul(self.B(v_dst).transpose(1, 2)).squeeze()
+    def forward(self, z_src, z_dst):
+        return self.A(z_src).matmul(self.B(z_dst).transpose(1, 2)).squeeze()

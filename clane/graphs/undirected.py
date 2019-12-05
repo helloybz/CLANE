@@ -39,3 +39,11 @@ class CoraDataset(Dataset):
     @property
     def z(self):
         return self.data.z
+
+    @property
+    def x(self):
+        return self.data.x
+
+    @property
+    def edge_index(self):
+        return self.data.edge_index
