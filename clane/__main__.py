@@ -54,6 +54,7 @@ while True:
         for batch_index, (index_batch, edge_batch) in enumerate(node_pair_loader):
             optimizer.zero_grad()
             z_batch = g.z[index_batch].to(device, non_blocking=True)
+            edge_batch = edge_batch.to(device, non_blocking=True)
             srcs, dsts = z_batch.split(split_size=1, dim=1)
             cost = loss(similarity(srcs, dsts), edge_batch)
             cost.backward()
