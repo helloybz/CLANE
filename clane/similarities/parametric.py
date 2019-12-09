@@ -1,10 +1,13 @@
 import torch.nn as nn
 
 
-class Parametric:
+class Parametric(object):
     @property
     def is_nonparametric(self):
         return False
+
+    def __name__(self):
+        return self.__name__
 
 
 class AsymmetricSingleScalar(nn.Module, Parametric):
@@ -15,4 +18,4 @@ class AsymmetricSingleScalar(nn.Module, Parametric):
         self.B = nn.Linear(dim, dim)
 
     def forward(self, z_src, z_dst):
-        return self.A(z_src).matmul(self.B(z_dst).transpose(1, 2)).squeeze()
+        return self.A(z_src).matmul(self.B(z_dst).transpose(1, 2)).reshape(-1)

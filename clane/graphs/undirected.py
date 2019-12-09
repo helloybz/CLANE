@@ -6,23 +6,9 @@ from torch.utils.data import Dataset
 from clane.settings import DATA_PATH
 
 
-class CoraDataset(Dataset):
+class UndirectedGraphDataset(Dataset):
     def __init__(self):
-        super(CoraDataset, self).__init__()
-        from torch_geometric.datasets import Planetoid
-        self.data = Planetoid(
-            root=os.path.join(DATA_PATH, 'cora'),
-            name='Cora'
-        )[0]
-
-        del self.data.train_mask
-        del self.data.val_mask
-        del self.data.test_mask
-
         self.data.z = self.data.x.clone()
-        self.data.edge_weight = \
-            self.data.edge_index.new_ones(self.data.num_edges)
-        self.dim = self.data.x.shape[1]
 
     def __getitem__(self, index):
         # Compute src and dst from index.
@@ -47,3 +33,27 @@ class CoraDataset(Dataset):
     @property
     def edge_index(self):
         return self.data.edge_index
+
+    @property
+    def dim(self):
+        return self.x.shape[1]
+
+
+class CoraDataset(UndirectedGraphDataset):
+    def __init__(self):
+        from torch_geometric.datasets import Planetoid
+        self.data = Planetoid(
+            root=os.path.join(DATA_PATH, 'cora'),
+            name='Cora'
+        )[0]
+        del self.data.train_mask
+        del self.data.val_mask
+        del self.data.test_mask
+        super(CoraDataset, self).__init__()
+
+
+class KarateDataset(UndirectedGraphDataset):
+    def __init__(self):
+        from torch_geometric.datasets import KarateClub
+        self.data = KarateClub()[0]
+        super(KarateDataset, self).__init__()

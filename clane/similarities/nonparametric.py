@@ -12,4 +12,4 @@ class CosineSimilarity(nn.Module, NonParametric):
         super(CosineSimilarity, self).__init__()
 
     def forward(self, z_src, z_dst):
-        return nn.CosineSimilarity(dim=-1)(z_src, z_dst)
+        return nn.CosineSimilarity(dim=-1)(z_src, z_dst).reshape(-1,)
