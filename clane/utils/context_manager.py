@@ -16,7 +16,12 @@ class ContextManager:
                         + f'b{config.batch_size}_'\
                         + f'g{config.gamma}_'\
                         + f'tz{config.tol_Z}_'\
-                        + f'tp{config.tol_P}'
+                        + f'tp{config.tol_P}_'
+        if config.lr_factor:
+            self.model_tag = self.model_tag \
+                + f'lr_f{config.lr_factor}_' \
+                + f'lr_p{config.lr_patience}_'
+
         self.board_writer = SummaryWriter(
             log_dir=os.path.join(LOG_PATH, self.model_tag),
         )

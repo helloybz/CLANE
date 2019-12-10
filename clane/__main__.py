@@ -12,8 +12,11 @@ from clane.utils import ContextManager
 parser = argparse.ArgumentParser(prog='clane')
 parser.add_argument('dataset', type=str)
 parser.add_argument('similarity', type=str)
+parser.add_argument('iteration', type=int)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--lr', type=float, default=1e-4)
+parser.add_argument('--lr_factor', type=float)
+parser.add_argument('--lr_patience', type=int)
 parser.add_argument('--gpu', type=str, default=None)
 parser.add_argument('--gamma', type=float, default=0.76)
 parser.add_argument('--tol_P', type=int, default=30)
@@ -31,8 +34,7 @@ g = get_graph(
     dataset=config.dataset,
 )
 
-while True:
-    # TODO: Determine a condition of this loop ends.
+while manager.steps['iter'] != config.iteration:
 
     similarity = get_similarity(
         measure=config.similarity,
@@ -45,7 +47,14 @@ while True:
             similarity.parameters(),
             lr=config.lr,
         )
-
+        # TODO: lr optimizer here.
+        if config.lr_factor:
+            lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer=optimizer,
+                factor=config.lr_factor,
+                patience=config.lr_patience,
+                verbose=True,
+            )
         tolerence_P = config.tol_P
         epoch_P = 0
 
@@ -119,6 +128,8 @@ while True:
             tolerence_P = config.tol_P if init_required else tolerence_P - 1
 
             # TODO: update lr
+            if config.lr_factor:
+                lr_scheduler.step(valid_cost)
         manager.capture('P')
 
     tolerence_Z = config.tol_Z
