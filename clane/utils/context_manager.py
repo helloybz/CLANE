@@ -29,14 +29,24 @@ class ContextManager:
         self.min_cost = inf
 
     def write(self, tag, cost):
-        self.steps[tag][-1] += 1
+        '''
+            Write the given value
+            at auto-computed global step
+            with Tensorboard SummaryWriter
+        '''
+        self.steps[tag.split('/')[0]][-1] += 1
         self.board_writer.add_scalar(
             tag=tag,
             scalar_value=cost,
-            global_step=sum(self.steps[tag])
+            global_step=sum(self.steps[tag.split('/')[0]])
         )
 
     def capture(self, tag):
+        '''
+            Wrap up the logs of this iteration,
+            Make a new log slot,
+            and re-initialize the "min_cost" to inf.
+        '''
         self.steps[tag][-1] -= 1
         self.steps[tag].append(0)
         self.min_cost = inf

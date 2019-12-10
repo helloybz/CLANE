@@ -45,21 +45,29 @@ while True:
             similarity.parameters(),
             lr=config.lr,
         )
-        node_pair_loader = DataLoader(
-            dataset=g,
-            batch_size=config.batch_size,
-            drop_last=False,
-            shuffle=True,
-            pin_memory=True,
-        )
+
         tolerence_P = config.tol_P
         epoch_P = 0
 
         while tolerence_P != 0:
             epoch_P += 1
-            total_cost = 0
+
+            train_size = int(0.8*len(g))
+            train_set, valid_set = torch.utils.data.random_split(
+                g, [train_size, len(g)-train_size]
+            )
+
+            train_loader = DataLoader(
+                dataset=train_set,
+                batch_size=config.batch_size,
+                drop_last=False,
+                shuffle=True,
+                pin_memory=True,
+            )
+
+            train_cost = 0
             for batch_index, (index_batch, edge_batch)\
-                    in enumerate(node_pair_loader):
+                    in enumerate(train_loader):
                 optimizer.zero_grad()
 
                 z_batch = g.z[index_batch].to(device, non_blocking=True)
@@ -70,14 +78,47 @@ while True:
                 cost.backward()
                 optimizer.step()
 
-                total_cost += float(cost)
-                progress = 100*batch_index*config.batch_size/len(g)
-                print(f'Epoch: {epoch_P}, Progress: {progress:.2f}% '
-                      + f'tol: {tolerence_P}', end='\r')
+                train_cost += float(cost)
+                progress = 100*batch_index*config.batch_size/len(train_set)
+                print(f'Epoch: {epoch_P} Train: {progress:.2f}% ',
+                      end='\r')
+            print(f'Epoch: {epoch_P:3d} '
+                  + f'tol: {tolerence_P:3d} '
+                  + f'Train loss: {train_cost:.2f} ')
 
-            manager.write('P', total_cost)
-            init_required = manager.update_best_model(similarity, total_cost)
+            valid_loader = DataLoader(
+                dataset=valid_set,
+                batch_size=config.batch_size,
+                drop_last=False,
+                shuffle=True,
+                pin_memory=True,
+            )
+
+            with torch.no_grad():
+                valid_cost = 0
+                for batch_index, (index_batch, edge_batch)\
+                        in enumerate(valid_loader):
+                    z_batch = g.z[index_batch].to(device, non_blocking=True)
+                    edge_batch = edge_batch.to(device, non_blocking=True)
+
+                    z_srcs, z_dsts = z_batch.split(split_size=1, dim=1)
+                    cost = loss(similarity(z_srcs, z_dsts), edge_batch)
+
+                    valid_cost += float(cost)
+                    progress = 100*batch_index*config.batch_size/len(valid_set)
+                    print(f'Epoch: {epoch_P} Valid: {progress:.2f}% ',
+                          end='\r')
+            print(f'Epoch: {epoch_P:3d} '
+                  + f'tol: {tolerence_P:3d} '
+                  + f'Valid loss: {valid_cost:.2f} ')
+
+            manager.write('P/train loss', train_cost)
+            manager.write('P/valid loss', valid_cost)
+
+            init_required = manager.update_best_model(similarity, valid_cost)
             tolerence_P = config.tol_P if init_required else tolerence_P - 1
+
+            # TODO: update lr
         manager.capture('P')
 
     tolerence_Z = config.tol_Z
