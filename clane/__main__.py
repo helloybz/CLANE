@@ -133,7 +133,7 @@ while manager.steps['iter'] != config.iteration:
         manager.capture('P')
 
     tolerence_Z = config.tol_Z
-    z_snapshot = g.z.clone()
+    z_snapshot = g.z.clone().to(device)
 
     if not similarity.is_nonparametric:
         similarity = manager.get_best_model(model=similarity, device=device)
@@ -146,15 +146,18 @@ while manager.steps['iter'] != config.iteration:
             for idx in range(g.z.shape[0]):
                 indices = g.edge_index[:, g.edge_index[0] == idx].t()
                 idx_src, idx_dst = indices.split(split_size=1, dim=1)
-
-                weight = similarity(z_snapshot[idx_src], z_snapshot[idx_dst])
+                z_snapshot_src = z_snapshot[idx_src].to(device, non_blocking=True)
+                z_snapshot_dst = z_snapshot[idx_dst].to(device, non_blocking=True)
+                z_src = g.z[idx_dst].to(device, non_blocking=True)
+                x_src = g.x[idx].to(device, non_blocking=True)
+                weight = similarity(z_snapshot_src, z_snapshot_dst)
                 weight = weight.softmax(0)
 
                 g.z[idx] = \
-                    g.x[idx] + \
+                    x_src + \
                     torch.matmul(
                         weight,
-                        g.z[idx_dst].squeeze(1)
+                        z_src.squeeze(1)
                     ).mul(config.gamma)
 
                 progress = 100*(idx+1)/g.z.shape[0]
