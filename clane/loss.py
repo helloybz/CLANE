@@ -21,7 +21,7 @@ class ApproximatedBCEWithLogitsLoss(_Loss):
         self.register_buffer('pos_weight', pos_weight)
 
     def forward(self, input, target):
-        sample_idx = input.sigmoid().bernoulli().bool()
+        sample_idx = input.bernoulli().bool()
         input = input.masked_select(sample_idx)
         target = target.masked_select(sample_idx)
         if self.weight:

@@ -38,16 +38,17 @@ while manager.steps['iter'] != config.iteration:
 
     similarity = get_similarity(
         measure=config.similarity,
-        dim=g.dim
+        dim=g.feature_dim
     ).to(device)
-
+    g.node_traversal = False
     if not similarity.is_nonparametric:
         loss = ApproximatedBCEWithLogitsLoss(reduction='sum')
+
         optimizer = torch.optim.Adam(
             similarity.parameters(),
             lr=config.lr,
         )
-        # TODO: lr optimizer here.
+
         if config.lr_factor:
             lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer=optimizer,
@@ -55,6 +56,7 @@ while manager.steps['iter'] != config.iteration:
                 patience=config.lr_patience,
                 verbose=True,
             )
+
         tolerence_P = config.tol_P
         epoch_P = 0
 
@@ -75,15 +77,15 @@ while manager.steps['iter'] != config.iteration:
             )
 
             train_cost = 0
-            for batch_index, (index_batch, edge_batch)\
+            for batch_index, (z_pairs, edges)\
                     in enumerate(train_loader):
                 optimizer.zero_grad()
+                z_pairs = z_pairs.to(device, non_blocking=True)
+                edges = edges.to(device, non_blocking=True)
 
-                z_batch = g.z[index_batch].to(device, non_blocking=True)
-                edge_batch = edge_batch.to(device, non_blocking=True)
-
-                z_srcs, z_dsts = z_batch.split(split_size=1, dim=1)
-                cost = loss(similarity(z_srcs, z_dsts), edge_batch)
+                sims = similarity(*z_pairs.split(split_size=1, dim=1))
+                edge_probs = sims.sigmoid()
+                cost = loss(edge_probs, edges)
                 cost.backward()
                 optimizer.step()
 
@@ -105,13 +107,14 @@ while manager.steps['iter'] != config.iteration:
 
             with torch.no_grad():
                 valid_cost = 0
-                for batch_index, (index_batch, edge_batch)\
+                for batch_index, (z_pairs, edges)\
                         in enumerate(valid_loader):
-                    z_batch = g.z[index_batch].to(device, non_blocking=True)
-                    edge_batch = edge_batch.to(device, non_blocking=True)
+                    z_pairs = z_pairs.to(device, non_blocking=True)
+                    edges = edges.to(device, non_blocking=True)
 
-                    z_srcs, z_dsts = z_batch.split(split_size=1, dim=1)
-                    cost = loss(similarity(z_srcs, z_dsts), edge_batch)
+                    sims = similarity(*z_pairs.split(split_size=1, dim=1))
+                    edge_probs = sims.sigmoid()
+                    cost = loss(edge_probs, edges)
 
                     valid_cost += float(cost)
                     progress = 100*batch_index*config.batch_size/len(valid_set)
@@ -133,7 +136,8 @@ while manager.steps['iter'] != config.iteration:
         manager.capture('P')
 
     tolerence_Z = config.tol_Z
-    z_snapshot = g.z.clone().to(device)
+    g.node_traversal = True
+    g.build_transition_matrix(similarity)
 
     if not similarity.is_nonparametric:
         similarity = manager.get_best_model(model=similarity, device=device)
@@ -142,29 +146,20 @@ while manager.steps['iter'] != config.iteration:
     with torch.no_grad():
         while tolerence_Z != 0:
             epoch_Z += 1
-            prev_z = g.z.clone()
-            for idx in range(g.z.shape[0]):
-                indices = g.edge_index[:, g.edge_index[0] == idx].t()
-                idx_src, idx_dst = indices.split(split_size=1, dim=1)
-                z_snapshot_src = z_snapshot[idx_src].to(device, non_blocking=True)
-                z_snapshot_dst = z_snapshot[idx_dst].to(device, non_blocking=True)
-                z_src = g.z[idx_dst].to(device, non_blocking=True)
-                x_src = g.x[idx].to(device, non_blocking=True)
-                weight = similarity(z_snapshot_src, z_snapshot_dst)
-                weight = weight.softmax(0)
+            distance = 0
 
-                g.z[idx] = \
-                    x_src + \
-                    torch.matmul(
-                        weight,
-                        z_src.squeeze(1)
-                    ).mul(config.gamma)
-
+            for idx, (x, z, w_nbrs, z_nbrs) in enumerate(g):
+                x = x.to(device, non_blocking=True)
+                z = z.to(device, non_blocking=True)
+                w_nbrs = w_nbrs.to(device, non_blocking=True).softmax(0)
+                z_nbrs = z_nbrs.to(device, non_blocking=True)
+                new_z = x + torch.matmul(w_nbrs, z_nbrs).mul(config.gamma)
+                distance += torch.norm(new_z - z, 1)
+                g.set_z(idx, new_z)
                 progress = 100*(idx+1)/g.z.shape[0]
                 print(f'Epoch: {epoch_Z}, Progress: {progress:.2f}% '
                       + f'tol: {tolerence_Z}', end='\r')
 
-            distance = torch.norm(g.z - prev_z, 1)
             init_required = manager.update_best_model(g, float(distance))
             tolerence_Z = config.tol_Z if init_required else tolerence_Z - 1
 
