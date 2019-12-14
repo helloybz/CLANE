@@ -15,7 +15,7 @@ class GraphDataset(Dataset):
 
     @property
     def num_edges(self):
-        return self.edge_index.shape[0]
+        return self.edge_index.shape[1]
 
     @property
     def feature_dim(self):

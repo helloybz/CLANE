@@ -21,6 +21,7 @@ parser.add_argument('--gpu', type=str, default=None)
 parser.add_argument('--gamma', type=float, default=0.76)
 parser.add_argument('--tol_P', type=int, default=30)
 parser.add_argument('--tol_Z', type=int, default=30)
+parser.add_argument('--num_cpu', type=int, default=0)
 
 config = parser.parse_args()
 
@@ -74,6 +75,7 @@ while manager.steps['iter'] != config.iteration:
                 drop_last=False,
                 shuffle=True,
                 pin_memory=True,
+                num_workers=config.num_cpu
             )
 
             train_cost = 0
@@ -103,6 +105,7 @@ while manager.steps['iter'] != config.iteration:
                 drop_last=False,
                 shuffle=True,
                 pin_memory=True,
+                num_workers=config.num_cpu
             )
 
             with torch.no_grad():
