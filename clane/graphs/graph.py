@@ -8,7 +8,15 @@ class GraphDataset(Dataset):
     def __init__(self):
         super(GraphDataset, self).__init__()
         self.node_traversal = False
-
+        '''
+        node_traversal (Boolean):
+            If True, the __getitem__ method will return
+            all the stuffs which are needed to optimize
+            the node embeddings.
+            Otherwise, the method will return a pair of
+            nodes which is needed to training the tran-
+            sition matrix.
+        '''
     @property
     def num_nodes(self):
         raise NotImplementedError

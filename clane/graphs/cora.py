@@ -1,6 +1,6 @@
 from .graph import InMemoryDataset
 
-from clane.settings import DATA_PATH
+from settings import DATA_PATH
 
 
 class Cora(InMemoryDataset):

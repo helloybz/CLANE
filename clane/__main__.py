@@ -3,25 +3,25 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 
-from clane.graphs.utils import get_graph
-from clane.similarities.utils import get_similarity
-from clane.loss import ApproximatedBCEWithLogitsLoss
-from clane.utils import ContextManager
+from graphs.utils import get_graph
+from similarities.utils import get_similarity
+from loss import ApproximatedBCEWithLogitsLoss
+from utils import ContextManager
 
-
-parser = argparse.ArgumentParser(prog='clane')
-parser.add_argument('dataset', type=str)
+# TODO: Maker better helps.
+parser = argparse.ArgumentParser(prog='CLANE')
+parser.add_argument('dataset', type=str,
+    help='Name of the graph dataset.')
 parser.add_argument('similarity', type=str)
 parser.add_argument('iteration', type=int)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--lr', type=float, default=1e-4)
-parser.add_argument('--lr_factor', type=float)
-parser.add_argument('--lr_patience', type=int)
 parser.add_argument('--gpu', type=str, default=None)
 parser.add_argument('--gamma', type=float, default=0.76)
 parser.add_argument('--tol_P', type=int, default=30)
 parser.add_argument('--tol_Z', type=int, default=30)
-parser.add_argument('--num_cpu', type=int, default=0)
+parser.add_argument('--num_workers', type=int, default=0,
+    help='The number of the workers for a dataloader.')
 
 config = parser.parse_args()
 
@@ -37,11 +37,16 @@ g = get_graph(
 
 while manager.steps['iter'] != config.iteration:
 
+    # TODO: Determine whether the simliarity measure
+    #       need to be initialized per iterations.
+    #       if NO, move the get_similarity method
+    #       out of the while loop.      
     similarity = get_similarity(
         measure=config.similarity,
         dim=g.feature_dim
     ).to(device)
-    g.node_traversal = False
+    
+    g.node_traversal = False # to be False, while training the P.
     if not similarity.is_nonparametric:
         loss = ApproximatedBCEWithLogitsLoss(reduction='sum')
 
@@ -50,39 +55,27 @@ while manager.steps['iter'] != config.iteration:
             lr=config.lr,
         )
 
-        if config.lr_factor:
-            lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer=optimizer,
-                factor=config.lr_factor,
-                patience=config.lr_patience,
-                verbose=True,
-            )
-
+        # TODO: these are supposed to be handled in ContextManger.
         tolerence_P = config.tol_P
         epoch_P = 0
 
         while tolerence_P != 0:
             epoch_P += 1
 
-            train_size = int(0.8*len(g))
-            train_set, valid_set = torch.utils.data.random_split(
-                g, [train_size, len(g)-train_size]
-            )
-
-            train_loader = DataLoader(
-                dataset=train_set,
+            dataloader = DataLoader(
+                dataset=g,
                 batch_size=config.batch_size,
                 drop_last=False,
                 shuffle=True,
                 pin_memory=True,
-                num_workers=config.num_cpu
+                num_workers=config.num_workers
             )
 
             train_cost = 0
             for batch_index, (z_pairs, edges)\
-                    in enumerate(train_loader):
+                    in enumerate(dataloader):
                 optimizer.zero_grad()
-                z_pairs = z_pairs.to(device, non_blocking=True)
+                z_pairs = z_pairs.to(device , non_blocking=True)
                 edges = edges.to(device, non_blocking=True)
 
                 sims = similarity(*z_pairs.split(split_size=1, dim=1))
@@ -92,50 +85,18 @@ while manager.steps['iter'] != config.iteration:
                 optimizer.step()
 
                 train_cost += float(cost)
-                progress = 100*batch_index*config.batch_size/len(train_set)
+                progress = 100*batch_index*config.batch_size/len(g)
                 print(f'Epoch: {epoch_P} Train: {progress:.2f}% ',
                       end='\r')
             print(f'Epoch: {epoch_P:3d} '
                   + f'tol: {tolerence_P:3d} '
                   + f'Train loss: {train_cost:.2f} ')
 
-            valid_loader = DataLoader(
-                dataset=valid_set,
-                batch_size=config.batch_size,
-                drop_last=False,
-                shuffle=True,
-                pin_memory=True,
-                num_workers=config.num_cpu
-            )
-
-            with torch.no_grad():
-                valid_cost = 0
-                for batch_index, (z_pairs, edges)\
-                        in enumerate(valid_loader):
-                    z_pairs = z_pairs.to(device, non_blocking=True)
-                    edges = edges.to(device, non_blocking=True)
-
-                    sims = similarity(*z_pairs.split(split_size=1, dim=1))
-                    edge_probs = sims.sigmoid()
-                    cost = loss(edge_probs, edges)
-
-                    valid_cost += float(cost)
-                    progress = 100*batch_index*config.batch_size/len(valid_set)
-                    print(f'Epoch: {epoch_P} Valid: {progress:.2f}% ',
-                          end='\r')
-            print(f'Epoch: {epoch_P:3d} '
-                  + f'tol: {tolerence_P:3d} '
-                  + f'Valid loss: {valid_cost:.2f} ')
-
             manager.write('P/train loss', train_cost)
-            manager.write('P/valid loss', valid_cost)
 
-            init_required = manager.update_best_model(similarity, valid_cost)
+            init_required = manager.update_best_model(similarity, train_cost)
             tolerence_P = config.tol_P if init_required else tolerence_P - 1
 
-            # TODO: update lr
-            if config.lr_factor:
-                lr_scheduler.step(valid_cost)
         manager.capture('P')
 
     tolerence_Z = config.tol_Z

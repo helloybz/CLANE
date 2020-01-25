@@ -1,5 +1,5 @@
 from . import Cora
-from ..graphs import KarateClub
+from graphs import KarateClub
 
 
 def get_graph(dataset):

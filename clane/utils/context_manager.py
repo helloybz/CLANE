@@ -4,8 +4,7 @@ from numpy import inf
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from clane.settings import LOG_PATH
-from clane.settings import PICKLE_PATH
+from settings import LOG_PATH, PICKLE_PATH
 
 
 class ContextManager:
@@ -17,10 +16,6 @@ class ContextManager:
                         + f'g{config.gamma}_'\
                         + f'tz{config.tol_Z}_'\
                         + f'tp{config.tol_P}_'
-        if config.lr_factor:
-            self.model_tag = self.model_tag \
-                + f'lr_f{config.lr_factor}_' \
-                + f'lr_p{config.lr_patience}_'
 
         self.board_writer = SummaryWriter(
             log_dir=os.path.join(LOG_PATH, self.model_tag),
