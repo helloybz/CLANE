@@ -14,6 +14,7 @@
    
    <img src="https://1.bp.blogspot.com/-hx5DlfIn7xk/XRJlD47Mv6I/AAAAAAAAEO4/o9ztIaCTz7Ie2eVEczhyGuciQPxV7JKFACLcBGAs/s640/Screenshot%2B2019-06-25%2Bat%2B11.11.05%2BAM.png">
    
+   
    각 정점들이 벡터 공간에 할당된 그 좌표를 그 정점의 임베딩이라고 부릅니다.
    이제 정점들은 그들의 관계 정보를 반영한 수치인 임베딩을 얻었으므로 다양한 머신러닝 기법을 적용할 수 있습니다.
 
