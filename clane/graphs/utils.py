@@ -3,9 +3,9 @@ from graphs import KarateClub
 
 
 def get_graph(dataset):
-    if dataset == 'cora':
+    if dataset == 'CORA':
         return Cora()
-    elif dataset == 'karate':
+    elif dataset == 'KARATE':
         return KarateClub()
     else:
         raise ValueError

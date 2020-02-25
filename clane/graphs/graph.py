@@ -3,6 +3,8 @@ import os
 import torch
 from torch.utils.data import Dataset
 
+from manager import ContextManager
+
 
 class GraphDataset(Dataset):
     def __init__(self):
@@ -61,9 +63,13 @@ class GraphDataset(Dataset):
             # And call the method here instead of indexing z.
             return self.get_z([i, j]), edge.float()
 
+    @torch.no_grad()
     def build_transition_matrix(self, similarity):
         for idx, indices in enumerate(self.edge_index.t()):
-            self.edge_similarity[idx] = similarity(*self.get_z(indices))
+            z = self.get_z(indices).to(
+                ContextManager.instance().device, non_blocking=True)
+            self.edge_similarity[idx] = similarity(
+                *z.split(split_size=1, dim=0))
 
     def get_x(self, index):
         raise NotImplementedError

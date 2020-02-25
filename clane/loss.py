@@ -10,7 +10,7 @@ class ApproximatedBCEWithLogitsLoss(_Loss):
                  weight=None,
                  size_average=None,
                  reduce=None,
-                 reduction='mean',
+                 reduction='sum',
                  pos_weight=None):
         super(ApproximatedBCEWithLogitsLoss, self).__init__(
             size_average,
