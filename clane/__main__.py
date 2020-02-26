@@ -34,12 +34,7 @@ config = parser.parse_args()
 
 ContextManager.instance(config)
 
-# Prepare a graph.
 g = get_graph(dataset=config.dataset)
-similarity = get_similarity(
-        measure=config.similarity,
-        dim=g.feature_dim
-    ).to(ContextManager.instance().device)
 
 for idx in range(ContextManager.instance().config.iteration):
     similarity = get_similarity(
