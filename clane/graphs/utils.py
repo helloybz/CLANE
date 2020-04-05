@@ -1,11 +1,12 @@
 from . import Cora
-from graphs import KarateClub
+# from graphs import KarateClub
+from clane import g
 
-
-def get_graph(dataset):
-    if dataset == 'CORA':
+def get_graph():
+    if not isinstance(g.config.dataset, str):
+        raise ValueError
+    
+    if g.config.dataset.upper() == 'CORA':
         return Cora()
-    elif dataset == 'KARATE':
-        return KarateClub()
     else:
         raise ValueError

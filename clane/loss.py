@@ -21,11 +21,17 @@ class ApproximatedBCEWithLogitsLoss(_Loss):
         self.register_buffer('pos_weight', pos_weight)
 
     def forward(self, input, target):
-        sample_idx = input.bernoulli().bool()
+        sample_idx = input.data.sigmoid() 
+        sample_idx = sample_idx.masked_scatter(target==1, 1-sample_idx)
+        sample_idx = sample_idx.bernoulli().bool()
         input = input.masked_select(sample_idx)
         target = target.masked_select(sample_idx)
+
+        if sample_idx.sum() == 0:
+            return input.sum()
+            
         if self.weight:
-            self.weight = self.weight.masekd_select(sample_idx)
+            self.weight = self.weight.masked_select(sample_idx)
         return F.binary_cross_entropy_with_logits(input, target,
                                                   self.weight,
                                                   pos_weight=self.pos_weight,

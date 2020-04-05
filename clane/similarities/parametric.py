@@ -13,11 +13,31 @@ class Parametric(object):
 class AsymmetricSingleScalar(nn.Module, Parametric):
     def __init__(self, dim):
         super(AsymmetricSingleScalar, self).__init__()
-        # TODO: Consider set bias as False
-        self.A = nn.Linear(dim, dim, bias=False)
+        self.A = nn.Linear(dim, dim, bias=False,)
         self.B = nn.Linear(dim, dim, bias=False)
 
     def forward(self, z_src, z_dst):
-        return self.A(z_src).matmul(
-                self.B(z_dst).transpose(-2, -1)
-                ).reshape(-1)
+        return self.A(z_src).unsqueeze(-2).matmul(
+            self.B(z_dst).unsqueeze(-2).transpose(-2,-1)
+        ).reshape([-1])
+
+
+class AsymmetricMultiScalar(nn.Module, Parametric):
+    def __init__(self, dim):
+        super(AsymmetricMultiScalar, self).__init__()
+
+        self.A = nn.Sequential(
+            nn.Linear(dim, dim, bias=False,),
+            nn.Sigmoid(),
+            nn.Linear(dim, dim, bias=False,),
+        )
+        self.B = nn.Sequential(
+            nn.Linear(dim, dim, bias=False,),
+            nn.Sigmoid(),
+            nn.Linear(dim, dim, bias=False,),
+        )
+
+    def forward(self, z_src, z_dst):
+        return self.A(z_src).unsqueeze(-2).matmul(
+            self.B(z_dst).unsqueeze(-2).transpose(-2,-1)
+        ).reshape([-1])

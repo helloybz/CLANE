@@ -19,36 +19,46 @@ class SingletonInstane:
 
 
 class ContextManager(SingletonInstane):
-    def __init__(self, config):
+    def initialize(self, config):
         self.config = config
-        BASE_DIR = os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))
-        CHKP_PATH = os.path.join(BASE_DIR, 'checkpoints')
-        self.tag = self.make_tag()
-        if not os.path.exists(os.path.join(CHKP_PATH, self.tag)):
-            os.makedirs(os.path.join(CHKP_PATH, self.tag))
+        self.tag = self._make_tag(config)
 
-        self.writer = SummaryWriter(
-            log_dir=os.path.join(BASE_DIR, 'runs', self.tag)
-        )
-        self.device = torch.device('cpu') \
-            if config.gpu is None \
-            else torch.device(f'cuda:{config.gpu}')
+        self.paths = dict()
+        BASE_DIR = os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))
+
+        self.paths['data'] = os.path.join(BASE_DIR, 'data')
+        self.paths['input'] = config.input_dir or os.path.join('input')
+        self.paths['output'] = config.output_dir or os.path.join('output')
+        self.paths['similarity'] = os.path.join(self.paths['output'], self.tag, 'similarity')
+        self.paths['embedding'] = os.path.join(self.paths['output'], self.tag, 'embedding')
+        self.paths['log'] = os.path.join('runs', self.tag)
+        for key in self.paths.keys():
+            if not os.path.exists(self.paths[key]):
+                os.makedirs(self.paths[key])
 
         self.steps = {
             'iter': 0,
             'P': 0,
-            'Z': 0,
-        }
-        self.paths = {
-            'similarity': os.path.join(CHKP_PATH, self.tag, 'similarity'),
-            'embedding': os.path.join(CHKP_PATH, self.tag, 'embedding')
+            'Z': 0
         }
 
-    def make_tag(self):
-        tag = ''
-        for key in self.config.__dict__.keys():
-            tag += f'[{key}]{self.config.__dict__[key]}'
+        self.writer = SummaryWriter(log_dir=self.paths['log'])
+        self.device = torch.device('cpu') \
+            if config.gpu is None \
+            else torch.device(f'cuda:{config.gpu}')
+
+    @staticmethod
+    def _make_tag(config):
+        tag = '_'.join([
+            f'{config.dataset}',
+            f'{config.similarity}',
+            f'g{config.gamma}',
+        ])
+        if config.similarity.upper() != 'COSINE':
+            tag = tag + f'_tP{config.tol_P}'
+            tag = tag + f'_lr{config.lr}'
+
 
         return tag
 
@@ -57,6 +67,14 @@ class ContextManager(SingletonInstane):
             tag,
             value,
             self.steps[key]
+        )
+
+    def write_embedding(self, mat, label, step):
+        self.writer.add_embedding(
+            mat,
+            label,
+            global_step=step,
+            tag=self.tag
         )
 
     # def capture(self, tag):

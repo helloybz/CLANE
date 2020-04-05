@@ -2,8 +2,10 @@ import os
 
 import torch
 from torch.utils.data import Dataset
+from torchvision import transforms
 
-from manager import ContextManager
+from clane import g
+from .transforms import Standardazation
 
 
 class GraphDataset(Dataset):
@@ -11,14 +13,14 @@ class GraphDataset(Dataset):
         super(GraphDataset, self).__init__()
         self.node_traversal = False
         '''
-        node_traversal (Boolean):
-            If True, the __getitem__ method will return
-            all the stuffs which are needed to optimize
-            the node embeddings.
+            If node_traversal is True, the __getitem__ 
+            method will return all the stuffs which are
+            needed for optimizing the node embeddings.
             Otherwise, the method will return a pair of
-            nodes which is needed to training the tran-
+            nodes which is needed for training the tran-
             sition matrix.
         '''
+
     @property
     def num_nodes(self):
         raise NotImplementedError
@@ -61,13 +63,16 @@ class GraphDataset(Dataset):
             # prepare a method which loads the embeddings
             # by reading from the disk.
             # And call the method here instead of indexing z.
-            return self.get_z([i, j]), edge.float()
+            return self.transform(self.get_z([i, j])), edge.float()
 
     @torch.no_grad()
     def build_transition_matrix(self, similarity):
+        '''
+            It actually computes the similarities between positive node pairs.
+        '''
         for idx, indices in enumerate(self.edge_index.t()):
-            z = self.get_z(indices).to(
-                ContextManager.instance().device, non_blocking=True)
+            z = self.transform(self.get_z(indices)).to(
+                g.device, non_blocking=True)
             self.edge_similarity[idx] = similarity(
                 *z.split(split_size=1, dim=0))
 
@@ -84,12 +89,8 @@ class GraphDataset(Dataset):
 class InMemoryDataset(GraphDataset):
     def __init__(self):
         super(InMemoryDataset, self).__init__()
-        self.x = self.data.x
-        self.y = self.data.y
-        self.edge_index = self.data.edge_index
         self.edge_similarity = self.x.new_ones(self.edge_index[0].shape)
         self.z = self.x.clone()
-        del self.data
 
     def get_x(self, index):
         return self.x[index]
@@ -99,6 +100,11 @@ class InMemoryDataset(GraphDataset):
 
     def set_z(self, index, values):
         self.z[index] = values.cpu()
+
+    def make_standard(self):
+        self.transform = transforms.Compose([
+            Standardazation(mean=self.z.mean(), std=self.z.std())
+        ])
 
     @property
     def num_nodes(self):

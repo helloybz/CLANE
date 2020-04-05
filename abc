@@ -1,0 +1,3 @@
+pip uninstall -y clane-helloybz
+python setup.py sdist bdist_wheel
+pip install dist/clane-helloybz-0.0.1.tar.gz
