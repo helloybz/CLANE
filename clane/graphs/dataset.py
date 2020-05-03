@@ -86,14 +86,18 @@ class GraphDataset(Dataset):
         raise NotImplementedError
 
 
-class InMemoryDataset(GraphDataset):
-    def __init__(self):
-        super(InMemoryDataset, self).__init__()
-        self.edge_similarity = self.x.new_ones(self.edge_index[0].shape)
-        self.z = self.x.clone()
+class InMemoryGraphDataset(GraphDataset):
+    def __init__(self, X, A, Y):
+        super(InMemoryGraphDataset, self).__init__()
+        self.X = X
+        self.A = A
+        self.Y = Y
+        self.node_similarity = self.A
+        self.edge_similarity = self.X.new_ones(self.A[0].shape)
+        self.Z = self.X.clone()
 
     def get_x(self, index):
-        return self.x[index]
+        return self.X[index]
 
     def get_z(self, index):
         return self.z[index]
@@ -108,40 +112,8 @@ class InMemoryDataset(GraphDataset):
 
     @property
     def num_nodes(self):
-        return self.x.shape[0]
+        return self.X.shape[0]
 
     @property
     def feature_dim(self):
-        return self.x.shape[1]
-
-
-class OnDiskDataset(GraphDataset):
-    def __init__(self):
-        super(OnDiskDataset, self).__init__()
-        # TODO: Prepare x paths
-        # TODO: Prepare z paths
-        # TODO: Prepare edge paths or an edge_index tensor
-        # TODO: Read meta data from the file
-        self.feature_dim, self.num_nodes = 0, 0
-
-    def get_x(self, index):
-        with open(os.path.join(self.x_path, f'{index}.csv')) as f:
-            x = torch.tensor(f.read().split(','), dtype=torch.float64)
-        return x
-
-    def get_z(self, index):
-        with open(os.path.join(self.z_path, f'{index}.csv')) as f:
-            z = torch.tensor(f.read().split(','), dtype=torch.float64)
-        return z
-
-    def set_z(self, index, values):
-        with open(os.path.join(self.z_path, f'{index}.csv'), 'w') as f:
-            f.write(','.join([str(x) for x in values.tolist()]))
-
-    @property
-    def num_nodes(self):
-        return self.num_nodes
-
-    @property
-    def feature_dim(self):
-        return self.feature_dim
+        return self.X.shape[1]

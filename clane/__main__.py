@@ -6,7 +6,7 @@ import os
 import torch
 
 from clane import g
-from .graphs.utils import get_graph
+from .graphs.utils import get_graph_dataset
 from .markovchain import MarkovChain
 from .similarities.utils import get_similarity
 from .trainer import Trainer
@@ -14,13 +14,12 @@ from .trainer import Trainer
 
 logger = logging.getLogger("clane")
 
-def process():
-    graph = get_graph()
 
-    g.write_embedding(graph.z, graph.y, g.steps['iter']) # Draw the embeddings of the raw data.
+def process():
+    graph = get_graph_dataset(g.config.input_dir)
 
     for idx in range(g.config.iteration):
-        
+
         g.steps['iter'] += 1
         logger.info(f"Iteration {g.steps['iter']} starts.")
         similarity = get_similarity(feature_dim=graph.feature_dim)
@@ -47,15 +46,16 @@ def main():
         prog='CLANE',
         formatter_class=ArgumentDefaultsHelpFormatter,
         conflict_handler='resolve'
-    ) 
+    )
 
-    parser.add_argument('dataset', type=str, 
-        help='Name of the network dataset.')
-    parser.add_argument('similarity', type=str,
-        help='Mesarement of the similarity between two nodes.')
+    parser.add_argument('--input_dir', type=str,
+                        help='Path to the input directory')
+    parser.add_argument('--similarity', type=str,
+                        help='Mesarement of the similarity \
+                            between two nodes.')
 
     parser.add_argument('--iteration', type=int, default=100,
-        help='Number of the iterations.')
+                        help='Number of the iterations.')
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--gpu', type=str, default=None)
@@ -80,6 +80,7 @@ def main():
     g.initialize(config)
 
     process()
+
 
 if __name__ == "__main__":
     main()
