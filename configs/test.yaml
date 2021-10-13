@@ -1,2 +1,2 @@
-dataset:
-  path: 
+graph:
+  embedding_dim: 64

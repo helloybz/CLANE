@@ -2,6 +2,8 @@ import argparse
 from pathlib import Path
 import yaml
 
+from .graph import Graph
+
 
 def train(args):
     print('[Train]', end='\n')
@@ -13,12 +15,29 @@ def train(args):
     else:
         raise FileNotFoundError(f"Config file not found. {args.config_file.absolute()}")
 
+    g = Graph(
+        data_root=args.data_root,
+        **hparams["graph"],
+    )
+
+    print(f"Graph Loaded.")
+    print(f" - {len(g)} vertices")
+    print(f" - {len(g.E)} edges")
+    print(f" - Content Embeddings:")
+    print(f"     - dim : {g.d:3d}")
+    print(f"     - mean: {g.C.mean():5.2f}")
+    print(f"     - std : {g.C.std():5.2f}")
+
 
 def main():
     parser = argparse.ArgumentParser(prog="CLANE")
     subparsers = parser.add_subparsers()
 
     train_parser = subparsers.add_parser("train")
+    train_parser.add_argument(
+        "--data_root", type=Path,
+        help="Path to the data root directory."
+    )
     train_parser.add_argument(
         "--config_file", type=Path,
         help="Path to the training configuration yaml file."

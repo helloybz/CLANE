@@ -9,6 +9,6 @@ pip install helloybz_clane
 
 ### Training
 ```bash
-clane train --config_file /path/to/config.yml
+clane train --data_root /path/to/data_root --config_file /path/to/config.yml
 ```
 
