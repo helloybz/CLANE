@@ -3,7 +3,6 @@ import os
 import torch
 from torch.utils.data import Dataset
 
-from manager import ContextManager
 
 
 class GraphDataset(Dataset):

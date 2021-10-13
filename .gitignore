@@ -1,15 +1,5 @@
 .vscode
-logdir
-*checkpoints*
-*pickles*
-*runs*
-data
-*.copy
-test.py
-.idea
-data/pickles
-*.png
-*.swp
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

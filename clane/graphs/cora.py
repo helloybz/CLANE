@@ -1,7 +1,5 @@
 from .graph import InMemoryDataset
 
-from settings import DATA_PATH
-
 
 class Cora(InMemoryDataset):
     def __init__(self):
