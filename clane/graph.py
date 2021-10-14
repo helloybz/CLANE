@@ -41,9 +41,14 @@ class Graph(Dataset):
 
         # Content Embeddings of the vertices, C.
         try:
-            self.C = torch.load(data_root.joinpath("C"))
+            self.C = torch.load(data_root.joinpath("C.npy"))
         except FileNotFoundError:
-            self.C = torch.rand([len(self.vertex_ids), self.d])
+            try:
+                self.C = torch.load(data_root.joinpath("C.pt"))
+            except FileNotFoundError:
+                self.C = torch.rand([len(self.vertex_ids), self.d])
+        except Exception:
+            raise
 
         # A set of the vertices, V
         self.V = [
