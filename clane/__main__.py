@@ -23,10 +23,10 @@ def embedding(args):
         **hparams["graph"],
     )
 
-    print(f"Graph Loaded.")
+    print("Graph Loaded.")
     print(f" - {len(g)} vertices")
     print(f" - {len(g.E)} edges")
-    print(f" - Content Embeddings:")
+    print(" - Content Embeddings:")
     print(f"     - dim : {g.d:3d}")
     print(f"     - mean: {g.C.mean():5.2f}")
     print(f"     - std : {g.C.std():5.2f}")
