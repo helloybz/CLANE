@@ -6,19 +6,20 @@ from torch.utils.data import Dataset
 
 class Vertex(object):
     def __init__(
-            self,
-            id_: str or int,
-            c: torch.Tensor,
+        self,
+        id_: str or int,
+        c: torch.Tensor,
     ) -> None:
         self.id_ = id_
         self.c = c
+        self.z = c
 
 
 class Edge(object):
     def __init__(
-            self,
-            src: Vertex,
-            dst: Vertex,
+        self,
+        src: Vertex,
+        dst: Vertex,
     ) -> None:
         self.src, self.dst = src, dst
 
@@ -82,3 +83,9 @@ class Graph(Dataset):
 
     def __getitem__(self, idx):
         return idx
+
+    @property
+    def Z(
+        self,
+    ) -> torch.Tensor:
+        return torch.stack([v.z for v in self.V]).cpu()
