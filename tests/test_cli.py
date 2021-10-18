@@ -11,7 +11,7 @@ class TestCLI(unittest.TestCase):
     def setUp(self):
         parser = argparse.ArgumentParser(prog="CLANE")
         subparsers = parser.add_subparsers()
-        embedding_parser = subparsers.add_parser("train")
+        embedding_parser = subparsers.add_parser("embedding")
         embedding_parser.add_argument(
             "--data_root", type=Path,
             help="Path to the data root directory."
@@ -26,7 +26,7 @@ class TestCLI(unittest.TestCase):
         )
 
         self.args = parser.parse_args(args=[
-            "train",
+            "embedding",
             "--data_root", "./zachary",
             "--output_root", "./test_output",
             "--config_file", "./configs/test.yaml",

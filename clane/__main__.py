@@ -49,7 +49,9 @@ def main():
     parser = argparse.ArgumentParser(prog="CLANE")
     subparsers = parser.add_subparsers()
 
-    embedding_parser = subparsers.add_parser("e")
+    embedding_parser = subparsers.add_parser(
+        name="embedding",
+        help='Compute the embeddings from the given graphs.')
     embedding_parser.add_argument(
         "--data_root", type=Path,
         help="Path to the data root directory."
