@@ -1,2 +1,5 @@
 graph:
   embedding_dim: 64
+
+similarity:
+  method: "cosine"
