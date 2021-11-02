@@ -6,6 +6,7 @@ import torch
 
 from clane.embedder import Embedder
 from clane.graph import Graph
+from clane import similarity
 
 
 def embedding(args):
@@ -31,7 +32,18 @@ def embedding(args):
     print(f"     - mean: {g.C.mean():5.2f}")
     print(f"     - std : {g.C.std():5.2f}")
 
-    embedder = Embedder()
+    try:
+        similarity_measure = getattr(similarity, hparams["similarity"]["method"])
+    except AttributeError:
+        raise AttributeError(f'Given similarity method {hparams["similarity"]["method"]} not found.')
+    except Exception:
+        raise
+
+    embedder = Embedder(
+        graph=g,
+        similarity_measure=similarity_measure,
+        **hparams["embedder"],
+    )
     embedder.iterate()
 
     print("Saving the results.")
@@ -49,7 +61,7 @@ def main():
     parser = argparse.ArgumentParser(prog="CLANE")
     subparsers = parser.add_subparsers()
 
-    embedding_parser = subparsers.add_parser("e")
+    embedding_parser = subparsers.add_parser("embedding")
     embedding_parser.add_argument(
         "--data_root", type=Path,
         help="Path to the data root directory."
