@@ -4,9 +4,9 @@ import yaml
 
 import torch
 
-from clane.embedder import Embedder
-from clane.graph import Graph
-from clane import similarity
+from .embedder import Embedder
+from .graph import Graph
+from . import similarity
 
 
 def embedding(args):
