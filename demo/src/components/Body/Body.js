@@ -1,6 +1,5 @@
 import { Grid, Slider, useTheme } from "@mui/material";
-import './Body.css';
-import { Plot } from "../../component"
+import { Plot } from "../../components"
 
 
 export function Body() {

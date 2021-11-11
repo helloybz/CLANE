@@ -1,8 +1,6 @@
-import { useTheme } from "@mui/material";
 import { Chart } from "react-google-charts";
 
 export function Plot() {
-    const theme = useTheme()
 
     return (
         <Chart
@@ -27,29 +25,29 @@ export function Plot() {
                     "bottom": 50,
                     "left": 50
                 },
-                backgroundColor: theme.palette.mode === "dark" ? theme.palette.background.dark : theme.palette.background.light,
-                colors: [theme.palette.mode === "dark" ? theme.palette.text.dark : theme.palette.text.light],
+                backgroundColor: 'rgb(13, 25, 40)',
+                colors: ['rgb(243, 246, 249)'],
                 hAxis: {
                     "gridlines": {
-                        "color": theme.palette.mode === "dark" ? theme.palette.divider.dark : theme.palette.divider.light,
+                        "color": 'rgb(24, 47, 75)',
                     },
                     "minorGridlines": {
-                        "color": theme.palette.mode === "dark" ? theme.palette.divider.dark : theme.palette.divider.light,
+                        "color": 'rgb(24, 47, 75)',
                     },
                     "baseline": {
-                        "color": theme.palette.mode === "dark" ? theme.palette.divider.dark : theme.palette.divider.light,
+                        "color": 'rgb(24, 47, 75)',
                     }
 
                 },
                 vAxis: {
                     "gridlines": {
-                        "color": theme.palette.mode === "dark" ? theme.palette.divider.dark : theme.palette.divider.light,
+                        "color": 'rgb(24, 47, 75)',
                     },
                     "minorGridlines": {
-                        "color": theme.palette.mode === "dark" ? theme.palette.divider.dark : theme.palette.divider.light,
+                        "color": 'rgb(24, 47, 75)',
                     },
                     "baseline": {
-                        "color": theme.palette.mode === "dark" ? theme.palette.divider.dark : theme.palette.divider.light,
+                        "color": 'rgb(24, 47, 75)',
                     }
                 }
             }}
