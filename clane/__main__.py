@@ -39,6 +39,8 @@ def embedding(args):
     except Exception:
         raise
 
+    similarity_measure = similarity_measure()
+
     embedder = Embedder(
         graph=g,
         similarity_measure=similarity_measure,
