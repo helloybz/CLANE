@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 
@@ -42,7 +43,7 @@ class Graph(Dataset):
 
         # Content Embeddings of the vertices, C.
         try:
-            self.C = torch.load(data_root.joinpath("C.npy"))
+            self.C = torch.from_numpy(np.load(data_root.joinpath("C.npy")))
         except FileNotFoundError:
             try:
                 self.C = torch.load(data_root.joinpath("C.pt"))
