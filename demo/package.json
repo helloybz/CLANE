@@ -1,7 +1,7 @@
 {
-  "name": "helloybz.github.io",
-  "version": "0.1.0",
+  "name": "clane-demo",
   "homepage": "https://helloybz.github.io/CLANE",
+  "version": "0.1.0",
   "private": true,
   "dependencies": {
     "@emotion/react": "^11.5.0",

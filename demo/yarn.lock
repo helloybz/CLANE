@@ -1578,6 +1578,7 @@
     csstype "^3.0.9"
     prop-types "^15.7.2"
 
+
 "@mui/types@^7.1.0":
   version "7.1.0"
   resolved "https://registry.yarnpkg.com/@mui/types/-/types-7.1.0.tgz#5ed928c5a41cfbf9a4be82ea3bbdc47bcc9610d5"

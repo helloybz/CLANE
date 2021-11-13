@@ -4,9 +4,9 @@ import yaml
 
 import torch
 
-from .embedder import Embedder
-from .graph import Graph
-from . import similarity
+from clane.embedder import Embedder
+from clane.graph import Graph
+from clane import similarity
 
 
 def embedding(args):
@@ -38,6 +38,8 @@ def embedding(args):
         raise AttributeError(f'Given similarity method {hparams["similarity"]["method"]} not found.')
     except Exception:
         raise
+
+    similarity_measure = similarity_measure()
 
     embedder = Embedder(
         graph=g,
