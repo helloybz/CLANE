@@ -46,15 +46,22 @@ def embedding(args):
         similarity_measure=similarity_measure,
         **hparams["embedder"],
     )
-    embedder.iterate()
+    embedder.iterate(save_all=args.save_all)
 
     print("Saving the results.")
     if not args.output_root.exists():
         args.output_root.mkdir()
-    torch.save(
-        obj=g.Z,
-        f=args.output_root.joinpath('Z.pt')
-    )
+    if args.save_all:
+        for iter, history in enumerate(g.embedding_history):
+            torch.save(
+                obj=history,
+                f=args.output_root.joinpath(f'Z_{iter}.pt')
+            )
+    else:
+        torch.save(
+            obj=g.Z,
+            f=args.output_root.joinpath('Z.pt')
+        )
 
     print(f"The embeddings are stored in {args.output_root.joinpath('Z.pt').absolute()}.")
 
@@ -75,6 +82,10 @@ def main():
     embedding_parser.add_argument(
         "--config_file", type=Path,
         help="Path to the training configuration yaml file."
+    )
+    embedding_parser.add_argument(
+        "--save_all", action='store_true',
+        help="If true, it saves the embeddings for every iteration."
     )
     embedding_parser.set_defaults(func=embedding)
 

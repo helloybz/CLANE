@@ -24,6 +24,10 @@ class TestCLI(unittest.TestCase):
             "--config_file", type=Path,
             help="Path to the training configuration yaml file."
         )
+        embedding_parser.add_argument(
+            "--save_all", action='store_true',
+            help="If true, it saves the embeddings for every iteration."
+        )
 
         self.args = parser.parse_args(args=[
             "train",
@@ -39,6 +43,11 @@ class TestCLI(unittest.TestCase):
         Z = torch.load(Path("./test_output/Z.pt"))
         self.assertEqual(Z.shape[0], 34)
         self.assertEqual(Z.shape[1], 64)
+
+    def test_cli_with_save_all(self):
+        self.args.save_all = True
+        embedding(self.args)
+        self.assertGreater(len(list(Path('./test_output').glob('./*_*.pt'))), 1)
 
     def tearDown(self) -> None:
         import shutil
