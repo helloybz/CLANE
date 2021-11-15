@@ -18,12 +18,18 @@ class Embedder(object):
 
     def iterate(
         self,
+        save_all: bool = False,
     ) -> None:
 
         diff = Inf
 
+        if save_all:
+            self.graph.embedding_history = []
+
         while self.tolerence > 0:
             prior_Z = self.graph.Z.clone()
+            if save_all:
+                self.graph.embedding_history.append(prior_Z)
 
             for v in self.graph.V:
                 similaryties = [self.similarity_measure(v.z, edge.dst.z) for edge in self.graph.E if edge.src == v]
