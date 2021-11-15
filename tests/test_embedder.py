@@ -1,5 +1,7 @@
 import unittest
 from pathlib import Path
+
+from numpy.lib.npyio import save
 from clane import similarity
 from clane.embedder import Embedder
 
@@ -24,3 +26,9 @@ class TestEmbedder(unittest.TestCase):
     def test_iterate_if_embeddings_are_updated(self):
         self.embedder.iterate()
         self.assertNotEqual((self.g.Z - self.g.C).sum(), 0)
+
+    def test_save_embedding_history(self):
+        self.embedder.iterate(save_all=True)
+
+        self.assertTrue(hasattr(self.g, "embedding_history"))
+        self.assertGreater(len(self.g.embedding_history), 1)
