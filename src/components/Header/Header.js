@@ -4,13 +4,25 @@ import { Box } from "@mui/system";
 export function Header() {
     return (
         <Box>
-            <AppBar position="fixed" sx={{ bgcolor: 'rgb(13, 25, 40)', borderBottom: 'solid 1px rgb(24, 47, 75)' }}>
+            <AppBar position="fixed"
+                sx={{
+                    backgroundImage: 'none',
+                    bgcolor: 'background.dark',
+                    borderBottomStyle: 'solid',
+                    borderBottomWidth: '1px',
+                    borderBottomColor: 'divider.dark',
+                }}>
                 <Toolbar>
-                    <Typography sx={{ fontSize: 'h5.fontSize', fontWeight: '600', color: 'rgb(243, 246, 249)' }}>
+                    <Typography
+                        sx={{
+                            fontSize: 'h5.fontSize',
+                            fontWeight: '600',
+                            color: 'text.dark'
+                        }}>
                         helloybz.
                     </Typography>
                 </Toolbar>
             </AppBar>
-        </Box>
+        </Box >
     )
 }

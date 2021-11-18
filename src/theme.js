@@ -8,13 +8,14 @@ export const theme = createTheme({
             dark: "#fff"
         },
         background: {
-            dark: "#0D1928"
+            default: "rgb(13, 25, 40)",
+            dark: "rgb(13, 25, 40)"
         },
         text: {
-            dark: "#fff"
+            dark: "rgb(243, 246, 249)"
         },
         divider: {
-            dark: "#1E3A5C"
+            dark: "rgb(24, 47, 75)"
         }
     },
 });

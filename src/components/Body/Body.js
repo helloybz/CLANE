@@ -1,41 +1,46 @@
-import { Box, Grid, Typography, useTheme } from "@mui/material";
+import { Box, Grid, Typography } from "@mui/material";
 import { Plot } from "../../components"
 
 
 export function Body() {
-    const theme = useTheme()
     return (
         <Grid
             container
+            component={Box}
             sx={{
-                bgcolor: theme.palette.mode === 'dark' ? 'background.dark' : 'background.light',
+                "padding": {
+                    "xs": '0 0',
+                    "md": '0 16rem'
+                }
             }}
-            justifyContent='center'
         >
-            <Box sx={{ padding: '0 3rem' }}>
-                <Grid item component={Typography} xs={12}
+            <Grid item component={Typography} xs={12}
+                sx={{
+                    color: "text.dark",
+                    fontSize: {
+                        xs: "2.5rem",
+                        md: "3rem",
+                    },
+                    fontWeight: "600",
+                }}
+            >
+                Content- and Link-Aware Node Embedding
+            </Grid>
+
+            <Grid
+                item xs={12}
+            >
+                <Plot />
+            </Grid>
+
+            <Grid item xs={12}>
+                <Typography
                     sx={{
                         color: 'rgb(243, 246, 249)',
-                        fontSize: '3rem',
-                        fontWeight: '600',
-                    }}
-                >
-                    Content- and Link-Aware Node Embedding
-                </Grid>
+                    }}>
+                </Typography>
+            </Grid>
 
-                <Grid item xs={"auto"} >
-                    <Plot />
-                </Grid>
-
-                <Grid item xs={12}>
-                    <Typography
-                        sx={{
-                            color: 'rgb(243, 246, 249)',
-                        }}>
-                    </Typography>
-                </Grid>
-            </Box>
-
-        </Grid>
+        </Grid >
     )
 }
