@@ -1,5 +1,5 @@
 import { Chart } from "react-google-charts";
-import { data } from './zachary_deepwalk';
+import { data } from './cora';
 import { Grid, Slider, Typography, useTheme } from "@mui/material";
 import { useEffect, useState } from "react";
 
@@ -60,8 +60,8 @@ export function Plot() {
                                 "color": theme.palette.divider.dark,
                             },
                             viewWindow: {
-                                max: -8,
-                                min: 8,
+                                max: -200,
+                                min: 200,
                             },
                         },
                         vAxis: {
@@ -75,8 +75,8 @@ export function Plot() {
                                 "color": theme.palette.divider.dark,
                             },
                             viewWindow: {
-                                max: -8,
-                                min: 8,
+                                max: -200,
+                                min: 200,
                             },
                         }
                     }}
