@@ -10,15 +10,20 @@ export function Header() {
                     bgcolor: 'background.dark',
                     borderBottomStyle: 'solid',
                     borderBottomWidth: '1px',
-                    borderBottomColor: 'divider.dark',
+                    borderBottomColor: 'border.dark',
                 }}>
                 <Toolbar>
                     <Typography
                         sx={{
                             fontSize: 'h5.fontSize',
                             fontWeight: '600',
-                            color: 'text.dark'
-                        }}>
+                            color: 'text.dark',
+                            ":hover": {
+                                cursor: "pointer",
+                            }
+                        }}
+                        onClick={() => (window.location.href = '/')}
+                    >
                         helloybz.
                     </Typography>
                 </Toolbar>
