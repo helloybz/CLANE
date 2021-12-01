@@ -67,7 +67,7 @@ def embedding(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="CLANE")
+    parser = argparse.ArgumentParser(prog="clane")
     subparsers = parser.add_subparsers()
 
     embedding_parser = subparsers.add_parser("embedding")
