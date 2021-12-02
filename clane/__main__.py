@@ -2,11 +2,11 @@ import argparse
 from pathlib import Path
 import yaml
 
-import torch
+import numpy as np
 
-from clane.embedder import Embedder
-from clane.graph import Graph
 from clane import similarity
+from clane.graph import Graph
+from clane.embedder import Embedder
 
 
 def embedding(args):
@@ -50,20 +50,19 @@ def embedding(args):
 
     print("Saving the results.")
     if not args.output_root.exists():
-        args.output_root.mkdir()
+        args.output_root.mkdir(parents=True, exists_ok=True)
     if args.save_all:
         for iter, history in enumerate(g.embedding_history):
-            torch.save(
-                obj=history,
-                f=args.output_root.joinpath(f'Z_{iter}.pt')
+            np.save(
+                args.output_root.joinpath(f'Z_{iter}.npy'),
+                history.numpy(),
             )
-    else:
-        torch.save(
-            obj=g.Z,
-            f=args.output_root.joinpath('Z.pt')
-        )
+    np.save(
+        args.output_root.joinpath('Z.npy'),
+        g.Z,
+    )
 
-    print(f"The embeddings are stored in {args.output_root.joinpath('Z.pt').absolute()}.")
+    print(f"The embeddings are stored in {args.output_root.joinpath('Z.npy').absolute()}.")
 
 
 def get_parser():
