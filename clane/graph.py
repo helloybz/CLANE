@@ -65,13 +65,13 @@ class Graph(Dataset):
         # A set of the edges, E
         try:
             with open(data_root.joinpath("E"), "r") as io:
-                edges = io.read().split("\n")
+                edges = io.read().strip().split("\n")
         except FileNotFoundError:
             raise
 
         self.E = []
         for edge in edges:
-            src_id, dst_id = edge.split(" ")
+            src_id, dst_id = edge.split("\t")
             self.E.append(
                 Edge(
                     src=self.V[self.vertex_ids.index(src_id)],

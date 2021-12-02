@@ -10,7 +10,7 @@ from clane.graph import Graph
 
 class TestEmbedder(unittest.TestCase):
     def setUp(self):
-        self.data_root = Path('zachary').absolute()
+        self.data_root = Path('./tests/data_root').absolute()
         self.d = 16
 
         self.g = Graph(
