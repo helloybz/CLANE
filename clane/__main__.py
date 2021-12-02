@@ -66,31 +66,32 @@ def embedding(args):
     print(f"The embeddings are stored in {args.output_root.joinpath('Z.pt').absolute()}.")
 
 
-def main():
+def get_parser():
     parser = argparse.ArgumentParser(prog="clane")
-    subparsers = parser.add_subparsers()
 
-    embedding_parser = subparsers.add_parser("embedding")
-    embedding_parser.add_argument(
+    parser.add_argument(
         "--data_root", type=Path,
         help="Path to the data root directory."
     )
-    embedding_parser.add_argument(
+    parser.add_argument(
         "--output_root", type=Path,
         help="Path to the root for the experiment results to be stored."
     )
-    embedding_parser.add_argument(
+    parser.add_argument(
         "--config_file", type=Path,
         help="Path to the training configuration yaml file."
     )
-    embedding_parser.add_argument(
+    parser.add_argument(
         "--save_all", action='store_true',
         help="If true, it saves the embeddings for every iteration."
     )
-    embedding_parser.set_defaults(func=embedding)
+    return parser
 
+
+def main():
+    parser = get_parser()
     args = parser.parse_args()
-    args.func(args)
+    embedding(args)
 
 
 if __name__ == "__main__":

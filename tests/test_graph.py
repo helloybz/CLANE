@@ -8,7 +8,7 @@ from clane.graph import Graph
 
 class TestGraph(unittest.TestCase):
     def setUp(self):
-        self.data_root = Path('zachary').absolute()
+        self.data_root = Path('./tests/data_root').absolute()
         self.d = 16
 
     def test_load_zachary(self):

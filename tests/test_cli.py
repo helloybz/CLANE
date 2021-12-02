@@ -1,48 +1,27 @@
-import argparse
 from pathlib import Path
 import unittest
 
 import torch
 
-from clane.__main__ import embedding
+from clane.__main__ import embedding, get_parser
 
 
 class TestCLI(unittest.TestCase):
     def setUp(self):
-        parser = argparse.ArgumentParser(prog="CLANE")
-        subparsers = parser.add_subparsers()
-        embedding_parser = subparsers.add_parser("train")
-        embedding_parser.add_argument(
-            "--data_root", type=Path,
-            help="Path to the data root directory."
-        )
-        embedding_parser.add_argument(
-            "--output_root", type=Path,
-            help="Path to the root for the experiment results to be stored."
-        )
-        embedding_parser.add_argument(
-            "--config_file", type=Path,
-            help="Path to the training configuration yaml file."
-        )
-        embedding_parser.add_argument(
-            "--save_all", action='store_true',
-            help="If true, it saves the embeddings for every iteration."
-        )
-
-        self.args = parser.parse_args(args=[
-            "train",
-            "--data_root", "./zachary",
-            "--output_root", "./test_output",
-            "--config_file", "./configs/test.yaml",
-        ])
-
-        print(self.args)
+        parser = get_parser()
+        self.args = parser.parse_args(
+            args=[
+                "--data_root", "./tests/data_root",
+                "--output_root", "./test_output",
+                "--config_file", "./tests/config.yaml",
+                "--save_all"
+            ])
 
     def test_cli_embedding(self):
         embedding(self.args)
-        Z = torch.load(Path("./test_output/Z.pt"))
+        Z = torch.load(Path("./test_output/Z_0.pt"))
         self.assertEqual(Z.shape[0], 34)
-        self.assertEqual(Z.shape[1], 64)
+        self.assertEqual(Z.shape[1], 2)
 
     def test_cli_with_save_all(self):
         self.args.save_all = True
