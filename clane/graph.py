@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.serialization import save
 from torch.utils.data import Dataset
 
 
