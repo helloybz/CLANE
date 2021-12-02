@@ -50,7 +50,7 @@ def embedding(args):
 
     print("Saving the results.")
     if not args.output_root.exists():
-        args.output_root.mkdir(parents=True, exists_ok=True)
+        args.output_root.mkdir(parents=True, exist_ok=True)
     if args.save_all:
         for iter, history in enumerate(g.embedding_history):
             np.save(
