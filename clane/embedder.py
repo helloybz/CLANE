@@ -32,10 +32,14 @@ class Embedder(object):
                 self.graph.embedding_history.append(prior_Z)
 
             for v in self.graph.V:
-                similaryties = [self.similarity_measure(v.z, edge.dst.z) for edge in self.graph.E if edge.src == v]
-                nbrs_z = [edge.dst.z for edge in self.graph.E if edge.src == v]
-
-                v.z = v.c + self.gamma * sum([u_z * s_vu.sigmoid() for u_z, s_vu in zip(nbrs_z, similaryties)])
+                msgs = []
+                for edge in self.graph.E:
+                    if edge.dst != v:
+                        continue
+                    s_vu = self.similarity_measure(prior_Z[v.idx], prior_Z[edge.src.idx])
+                    msg = prior_Z[edge.src.idx] * s_vu.sigmoid()
+                    msgs.append(msg)
+                v.z = v.c + self.gamma * sum(msgs)
 
             diff_new = (self.graph.Z - prior_Z).abs().sum()
             if diff_new >= diff:
