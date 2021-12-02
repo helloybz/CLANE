@@ -1,7 +1,6 @@
 import unittest
 from pathlib import Path
 
-from numpy.lib.npyio import save
 from clane import similarity
 from clane.embedder import Embedder
 
