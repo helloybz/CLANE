@@ -2,15 +2,18 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch.serialization import save
 from torch.utils.data import Dataset
 
 
 class Vertex(object):
     def __init__(
         self,
+        idx: int,
         id_: str or int,
         c: torch.Tensor,
     ) -> None:
+        self.idx = idx
         self.id_ = id_
         self.c = c
         self.z = c
@@ -37,7 +40,7 @@ class Graph(Dataset):
 
         try:
             with open(data_root.joinpath("V"), "r") as io:
-                self.vertex_ids = io.read().split('\n')
+                self.vertex_ids = io.read().strip().split('\n')
         except FileNotFoundError:
             raise
 
@@ -48,18 +51,19 @@ class Graph(Dataset):
             try:
                 self.C = torch.load(data_root.joinpath("C.pt"))
             except FileNotFoundError:
-                self.C = torch.rand([len(self.vertex_ids), self.d])
+                self.C = torch.normal(0, 4, [len(self.vertex_ids), self.d])
         except Exception:
             raise
 
         # A set of the vertices, V
         self.V = [
             Vertex(
+                idx=idx,
                 id_=vertex_id,
                 c=c,
             )
-            for vertex_id, c
-            in zip(self.vertex_ids, self.C)
+            for idx, (vertex_id, c)
+            in enumerate(zip(self.vertex_ids, self.C))
         ]
 
         # A set of the edges, E

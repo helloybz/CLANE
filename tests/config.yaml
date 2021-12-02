@@ -6,3 +6,4 @@ similarity:
 
 embedder:
   gamma: 0.76
+  tolerence: 10
