@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 
 
 class CosineSimilarity:
@@ -17,3 +18,20 @@ class CosineSimilarity:
         v2: torch.Tensor,
     ) -> torch.Tensor:
         return v1.dot(v2).div(v1.pow(2).sum().sqrt() * v2.pow(2).sum().sqrt())
+
+
+class AsymmertricSimilarity(nn.Module):
+    def __init__(
+            self,
+            n_dim: int,
+    ) -> None:
+        super(AsymmertricSimilarity, self).__init__()
+        self.Phi_src = nn.Linear(n_dim, n_dim, bias=True)
+        self.Phi_dst = nn.Linear(n_dim, n_dim, bias=True)
+
+    def forward(
+        self,
+        z_src:  torch.Tensor,
+        z_dst:  torch.Tensor,
+    ) -> None:
+        return self.Phi_src(z_src).dot(self.Phi_dst(z_dst))

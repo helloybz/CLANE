@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from clane.similarity import CosineSimilarity
+from clane.similarity import AsymmertricSimilarity, CosineSimilarity
 
 
 class TestCosineSimilarity(unittest.TestCase):
@@ -35,3 +35,20 @@ class TestCosineSimilarity(unittest.TestCase):
             -1,
             places=4
         )
+
+    def test_is_symmetric(self):
+        z_src = torch.rand(10)
+        z_dst = torch.rand(10)
+        self.assertEqual(
+            self.cosine_similarity(z_src, z_dst),
+            self.cosine_similarity(z_dst, z_src))
+
+
+class TestAsymmetricSimilarity(unittest.TestCase):
+    def test_is_asymmetric(self):
+        z_src = torch.rand(10)
+        z_dst = torch.rand(10)
+        similarity = AsymmertricSimilarity(n_dim=10)
+
+        self.assertEqual(similarity(z_src, z_dst), similarity(z_src, z_dst))
+        self.assertNotEqual(similarity(z_src, z_dst), similarity(z_dst, z_src))
