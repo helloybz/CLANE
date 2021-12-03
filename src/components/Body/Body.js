@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Box, Grid, Fab, Typography } from "@mui/material";
 import { GitHub } from "@mui/icons-material"
-import { Plot } from "../../components";
+import { Plot } from "./Plot";
 import { data, plot } from './data';
 import { Content } from './Content.js';
 
@@ -55,7 +55,7 @@ export function Body() {
                 }}
                 container
             >
-                <Grid item xs={12} md={'auto'}>
+                <Grid item xs={12}>
                     Content- and Link-Aware Node Embedding
                 </Grid>
                 <Grid
@@ -75,15 +75,15 @@ export function Body() {
                 </Grid>
             </Grid>
 
-            {/* <Grid item xs={12} lg={12} sx={{
+            <Grid item xs={12} lg={12} sx={{
                 marginBottom: "1rem",
                 height: {
                     xs: "20rem",
                     lg: "40rem",
                 }
             }}>
-                <Plot />
-            </Grid> */}
+                <Plot data={plot.zachary} title='eee' />
+            </Grid>
             {
                 data.map((section, i) => (
                     <Grid item xs={12} key={i} sx={{
