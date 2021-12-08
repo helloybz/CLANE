@@ -1,5 +1,6 @@
 .vscode
 
+*.ipynb
 .DS_store
 experiments
 # Byte-compiled / optimized / DLL files

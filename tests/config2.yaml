@@ -1,0 +1,14 @@
+graph:
+  embedding_dim: 2
+
+similarity:
+  method: "AsymmertricSimilarity"
+  kwargs:
+    n_dim: 2
+
+embedder:
+  gamma: 0.76
+  lr: 0.0001
+  tolerence: 3
+  epoch: 10
+  batch_size: 16

@@ -52,3 +52,17 @@ class TestAsymmetricSimilarity(unittest.TestCase):
 
         self.assertEqual(similarity(z_src, z_dst), similarity(z_src, z_dst))
         self.assertNotEqual(similarity(z_src, z_dst), similarity(z_dst, z_src))
+
+    def test_minibatched(self):
+        z_src = torch.rand(4, 10)
+        z_dst = torch.rand(4, 10)
+        similarity = AsymmertricSimilarity(n_dim=10)
+
+        self.assertEqual(
+            similarity(z_src, z_dst).sub(similarity(z_src, z_dst)).abs().sum(),
+            0
+        )
+        self.assertNotEqual(
+            similarity(z_src, z_dst).sub(similarity(z_dst, z_src)).abs().sum(),
+            0
+        )
