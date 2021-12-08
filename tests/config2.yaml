@@ -8,7 +8,9 @@ similarity:
 
 embedder:
   gamma: 0.76
-  lr: 0.0001
-  tolerence: 3
-  epoch: 10
-  batch_size: 16
+  lr: 0.1
+  tolerence: 1
+  tolerence_Z: 1
+  tolerence_P: 1
+  epoch: 2
+  batch_size: 4
