@@ -42,5 +42,5 @@ class AsymmertricSimilarity(nn.Module):
         self,
         z_src:  torch.Tensor,
         z_dst:  torch.Tensor,
-    ) -> None:
+    ) -> torch.Tensor:
         return self.Phi_src(z_src).unsqueeze(-2).matmul(self.Phi_dst(z_dst).unsqueeze(-1)).squeeze()

@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 import yaml
 
@@ -52,6 +53,7 @@ def embedding(args):
             similarity_measure=similarity_measure,
             device=device,
             save_history=args.save_history,
+            num_workers=args.num_workers,
             **hparams["embedder"],
         )
     else:
@@ -66,15 +68,24 @@ def embedding(args):
     print("Saving the results.")
     if not args.output_root.exists():
         args.output_root.mkdir(parents=True, exist_ok=True)
+
     if args.save_history:
-        for iter, history in enumerate(embedder.embedding_history):
-            np.save(
-                args.output_root.joinpath(f'Z_{iter}.npy'),
-                history.numpy(),
-            )
+        for iter, history in enumerate(embedder.history):
+
+            args.output_root.joinpath(f'{iter}').mkdir(parents=True, exist_ok=True)
+
+            if 'Z' in history.keys():
+                for iter_Z, Z in enumerate(history["Z"]):
+                    np.save(
+                        args.output_root.joinpath(f'{iter}/Z_{iter_Z}.npy'),
+                        Z.cpu().numpy(),
+                    )
+            if 'P_loss' in history.keys():
+                with open(args.output_root.joinpath(f'{iter}/P_loss.json'), 'w') as io:
+                    json.dump([loss.item() for loss in history["P_loss"]], io)
     np.save(
         args.output_root.joinpath('Z.npy'),
-        g.Z,
+        g.Z.cpu().numpy(),
     )
 
     print(f"The embeddings are stored in {args.output_root.joinpath('Z.npy').absolute()}.")
