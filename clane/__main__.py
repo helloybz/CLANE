@@ -3,10 +3,12 @@ from pathlib import Path
 import yaml
 
 import numpy as np
+import torch
 
 from clane import similarity
 from clane.graph import Graph
 from clane.embedder import Embedder
+from clane.embedder import IterativeEmbedder
 
 
 def embedding(args):
@@ -19,6 +21,7 @@ def embedding(args):
     else:
         raise FileNotFoundError(f"Config file not found. {args.config_file.absolute()}")
 
+    device = torch.device('cuda') if args.gpu else torch.device('cpu')
     g = Graph(
         data_root=args.data_root,
         **hparams["graph"],
@@ -39,20 +42,32 @@ def embedding(args):
     except Exception:
         raise
 
-    similarity_measure = similarity_measure()
-
-    embedder = Embedder(
-        graph=g,
-        similarity_measure=similarity_measure,
-        **hparams["embedder"],
+    similarity_measure = similarity_measure(
+        **hparams['similarity']['kwargs'],
     )
-    embedder.iterate(save_all=args.save_all)
+
+    if hasattr(similarity_measure, 'parameters'):
+        embedder = IterativeEmbedder(
+            graph=g,
+            similarity_measure=similarity_measure,
+            device=device,
+            save_history=args.save_history,
+            **hparams["embedder"],
+        )
+    else:
+        embedder = Embedder(
+            graph=g,
+            similarity_measure=similarity_measure,
+            save_history=args.save_history,
+            **hparams["embedder"],
+        )
+    embedder.iterate()
 
     print("Saving the results.")
     if not args.output_root.exists():
         args.output_root.mkdir(parents=True, exist_ok=True)
-    if args.save_all:
-        for iter, history in enumerate(g.embedding_history):
+    if args.save_history:
+        for iter, history in enumerate(embedder.embedding_history):
             np.save(
                 args.output_root.joinpath(f'Z_{iter}.npy'),
                 history.numpy(),
@@ -81,8 +96,14 @@ def get_parser():
         help="Path to the training configuration yaml file."
     )
     parser.add_argument(
-        "--save_all", action='store_true',
+        "--save_history", action='store_true',
         help="If true, it saves the embeddings for every iteration."
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=0,
+    )
+    parser.add_argument(
+        "--gpu", action='store_true'
     )
     return parser
 
