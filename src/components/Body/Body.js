@@ -45,7 +45,7 @@ export function Body() {
                     bottom: { xs: '5rem', lg: '10rem' },
                     right: { xs: '1rem', lg: '10rem' },
                     zIndex: 1000,
-                }} onClick={() => (window.location.href = "https://github.com/helloybz/clane")}
+                }} onClick={() => (window.location.href = "https://github.com/helloybz/CLANE")}
             >
                 <GitHub />
             </Fab>
