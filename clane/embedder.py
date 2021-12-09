@@ -3,7 +3,6 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
 from torch.optim import Adam
-from torch.utils.data.dataset import T
 
 from clane.graph import Graph
 
