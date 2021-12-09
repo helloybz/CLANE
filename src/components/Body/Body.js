@@ -21,13 +21,7 @@ export function Body() {
         <Grid
             container
             component={Box}
-            sx={{
-                "padding": {
-                    "xs": '0 1rem',
-                    "md": '0 5rem',
-                    "lg": '0 30rem'
-                }
-            }}
+            justifyContent="center"
         >
             <Fab
                 sx={{
@@ -49,11 +43,11 @@ export function Body() {
             >
                 <GitHub />
             </Fab>
-            <Grid
+            <Grid item component={Typography} xs={11} md={8}
                 sx={{
                     color: "text.dark",
                     fontSize: {
-                        xs: "2.5rem",
+                        xs: "2.1rem",
                         md: "3rem",
                     },
                     fontWeight: "600",
@@ -63,27 +57,25 @@ export function Body() {
                     },
                     marginBottom: '1rem'
                 }}
-                container
             >
                 CLANE
             </Grid>
 
-            <Grid item xs={12} lg={12} sx={{
+            <Grid item xs={11} md={8} sx={{
                 marginBottom: "1rem",
                 height: {
                     xs: "20rem",
                     lg: "40rem",
                 }
             }}>
-                <Plot data={plot.zachary} title='eee' />
+                <Plot data={plot.zachary} title='Zachary Karate Club' />
             </Grid>
             {
                 data.map((section, i) => (
-                    <Grid item xs={12} key={i} sx={{
+                    <Grid item xs={11} md={8} key={i} sx={{
                         marginBottom: "1rem"
-                    }}>
-                        <Typography
-                            variant='h2'
+                    }} container>
+                        <Grid item xs={12} component={Typography}
                             sx={{
                                 color: 'rgb(243, 246, 249)',
                                 fontSize: '2rem',
@@ -92,25 +84,19 @@ export function Body() {
                                 fontWeight: '1000'
                             }}>
                             {language === 'KOR' ? section.header.kor : section.header.eng}
-                        </Typography>
-                        <Typography
+                        </Grid>
+                        <Grid
+                            item
+                            xs={12}
                             sx={{
                                 color: 'rgb(243, 246, 249)',
                                 fontSize: '1.2rem',
-                            }}>
+                            }} container>
                             <Content type={section.content.type} content={section.content} language={language} />
-                        </Typography>
+                        </Grid>
                     </Grid>
                 ))
             }
-            <Grid item xs={12}>
-                <Typography
-                    sx={{
-                        color: 'rgb(243, 246, 249)',
-                    }}>
-                </Typography>
-            </Grid>
-
         </Grid >
     )
 }
