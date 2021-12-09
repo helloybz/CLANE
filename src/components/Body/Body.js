@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Box, Grid, Fab, Typography } from "@mui/material";
+import { Box, Grid, Fab, Typography } from "@mui/material";
 import { GitHub } from "@mui/icons-material"
 import { Plot } from "./Plot";
 import { data, plot } from './data';
@@ -32,14 +32,24 @@ export function Body() {
             <Fab
                 sx={{
                     position: "fixed",
-                    bottom: { xs: '1rem', lg: '15rem' },
-                    right: { xs: '1rem', lg: '15rem' },
+                    bottom: { xs: '1rem', lg: '5rem' },
+                    right: { xs: '1rem', lg: '10rem' },
                     zIndex: 1000,
                 }} onClick={handleLanguage}
             >
                 {language}
             </Fab>
-            <Grid item component={Typography} xs={12}
+            <Fab
+                sx={{
+                    position: "fixed",
+                    bottom: { xs: '5rem', lg: '10rem' },
+                    right: { xs: '1rem', lg: '10rem' },
+                    zIndex: 1000,
+                }} onClick={() => (window.location.href = "https://github.com/helloybz/clane")}
+            >
+                <GitHub />
+            </Fab>
+            <Grid
                 sx={{
                     color: "text.dark",
                     fontSize: {
@@ -55,24 +65,7 @@ export function Body() {
                 }}
                 container
             >
-                <Grid item xs={12}>
-                    Content- and Link-Aware Node Embedding
-                </Grid>
-                <Grid
-                    component={Button}
-                    sx={{
-                        marginLeft: "2rem",
-                        fontSize: "2rem",
-                        borderStyle: 'solid',
-                        borderWidth: '1px',
-                        borderColor: 'border.dark',
-                        borderRadius: '5rem',
-                        ":hover": { cursor: "pointer" }
-                    }}
-                    onClick={() => (window.location.href = "https://github.com/helloybz/clane")}
-                >
-                    <GitHub />
-                </Grid>
+                CLANE
             </Grid>
 
             <Grid item xs={12} lg={12} sx={{
