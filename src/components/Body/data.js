@@ -1,68 +1,139 @@
 export const data = [
-    // {
-    //     "header": {
-    //         'eng': 'Introduction',
-    //         'kor': '프로젝트 소개'
-    //     },
-    //     "content": {
-    //         'type': 'list',
-    //         'eng': `\d
-    //             `,
-    //         'kor': `\d
-    //             `,
-    //     }
-    // },
-    // {
-    //     "header": {
-    //         'eng': 'Understanding CLANE',
-    //         'kor': 'CLANE 이해하기',
-    //     },
-    //     "content": {
-    //         'type': 'paragraphs',
-    //         'eng': `\d
-    //             `,
-    //         'kor': `\d
-    //             `
-    //     }
-    // },
-    // {
-    //     "header": { "eng": 'Implementing CLANE', "kor": 'CLANE 구현하기' },
-    //     "content": {
-    //         'type': 'paragraphs',
-    //         'eng': `\d
-    //             `, 'kor': `\d
-    //             `
-    //     }
-    // },
-    // {
-    //     "header": { 'eng': 'Experiment: Node Classification', 'kor': '실험: 노드 분류' },
-    //     "content": {
-    //         'type': 'list',
-    //         'eng': `\d
-    //         `,
-    //         'kor': `\d
-    //         `,
-    //     }
-    // }
-    // ,
-    // {
-    //     "header": { 'eng': 'Experiment Result', 'kor': '실험 결과' },
-    //     "content": {
-    //         'type': 'table',
-    //         'eng': {
-    //             'title': 'micro-F1',
-    //             'header': ["Method", "10 %", "20 %", "30 %", "40 %", "50 %", "60 %", "70 %", "80 %", "90 %"],
-    //             'rows': [
-    //                 ["Deepwalk-Clone", "0.219", "0.242", "0.282", "0.335", "0.347", "0.342", "0.360", "0.377", "0.352"],
-    //                 ["Deepwalk", "0.200", "0.206", "0.215", "0.223", "0.213", "0.236", "0.242", "0.256", "0.247"],
-    //             ]
-    //         },
-    //         'kor': {
-    //             'header': ["Deepwalk-Clone", "10 %", "20 %", "30 %", "40 %", "50 %", "60 %", "70 %", "80 %", "90 %"],
-    //             'rows': [["Method", "10 %", "20 %", "30 %", "40 %", "50 %", "60 %", "70 %", "80 %", "90 %"], ["Method", "10 %", "20 %", "30 %", "40 %", "50 %", "60 %", "70 %", "80 %", "90 %"]]
-    //         },
-    //     }
-    // },
+    {
+        "header": {
+            'eng': 'Introduction',
+            'kor': '연구 소개',
+        },
+        "content": {
+            'type': 'list',
+            'eng': ``,
+            'kor': `\
+            석사 학위 논문으로, 네트워크 내 노드들의 연결관계 뿐만 아니라 노드의 내적 정보까지도 함께 반영한 임베딩을 구하기 위한 방법을 제안합니다.
+            노드의 내적 정보에, 이웃 노드의 정보를 유사도에 비례하여 취합하여 노드의 정보를 전파합니다.
+            반복적인 전파과정 끝에 노드 임베딩이 반드시 수렴하는 조건을 제안하여, 학습 파라미터없이 노드의 임베딩을 구할 수 있습니다.
+            두 노드간 유사도를 방향성을 띄는 비대칭 유사도 척도를 추가로 제안하여, Directed Graph에서 더 나은 품질의 임베딩을 얻을 수 있습니다.
+            다만, 이 유사도 척도는 학습 파라미터를 가지며, self-supervised 방식으로 학습됩니다.
+            유사도 척도를 학습할 때, 효과적으로 Loss를 근사하는 방법을 제안합니다.\
+            `
+        }
+    },
+    {
+        "header": {
+            'eng': 'Propagation Rule',
+            'kor': '전파 방법',
+        },
+        "content": {
+            'type': 'paragraphs',
+            'eng': `\
+                CLANE is an abbreviation for 'Content- and Link-Aware Node Embedding'.\
+                It is a study of how to compute the embeddings of the nodes in a given network, with recognizing the contents of the nodes themselves and the connection among them.
+
+                The algorithm is an iteration of 
+                `,
+            'kor': `\
+            임의의 Graph $G=(V,E)$가 주어졌을 때, 임의의 노드 $v\\inV$의 feature $z_v \\in \\R^d$를 다음과 같이 정의합니다.\
+            
+            $$z_v = c_v + \\sum_{u\\in nbrs(v)}z_u$$\
+
+            $c_v \\in \\R^d$는 노드 $v$의 내적 정보의 feature입니다.\
+            $c_v$는 다른 노드들과 관계없는 $v$ 만의 고유한 정보로 만들어진 feature vector로, $v$의 정보가 바뀌지 않는 한 항상 일정한 값을 갖습니다.\
+            $nbrs(v)$는 노드 $v$의 이웃 노드의 집합입니다.\
+            이처럼, 노드 $v$의 정보는 $v$의 내적 정보와 $v$의 이웃 노드들의 정보의 합으로 표현됩니다.\
+
+            $v$의 이웃 노드 $u \\in nbrs(v)$의 정보를 취합할 때, $v$와 $u$의 유사도 $s_{vu}$에 따라 취합하는 정도를 달리했습니다.\
+            그러면 자신과 비슷한 이웃 노드의 정보는 더 많이 반영하고, 비슷하지 않은 노드의 정보는 더 적게 반영할 수 있게 됩니다.\
+            이에 따라 $z_v$는 다음과 같이 다시 정의할 수 있습니다.\
+            
+            $$z_v = c_v + \\sum_{u\\in nbrs(v)}s_{vu}z_u$$\
+            
+            위 벡터 표현 식을 행렬 표현식으로 확장하여 모든 노드 $V$에 대한 식으로 표현하면 다음과 같습니다.\
+
+            $$ Z_{t+1} = C + SZ_{t},\\quad Z_0=C$$\
+
+            $Z_t \\in \\R^{|V|\\times d}$는 $t$번 정보를 전파했을 때의 모든 노드 $V$에 대한 $d$차원의 임베딩입니다.\
+            $C \\in \\R^{|V|\\times d}$는 모든 노드 $V$의 내적 정보 임베딩으로 노드 Feature의 초기값으로 쓰입니다.\
+            $S \\in \\R^{|V|\\times |V|}$는 Adjacency Matrix로 $s_{i,j}$는 $v_i$와 $v_j$ 사이에 Edge가 존재하지 않으면 $0$,\
+            그렇지 않다면 $s_{v_iv_u}$입니다.\
+
+            하지만 이 전파 방법으로는 이 과정을 얼마나 반복해야 하는지 알기 어렵습니다.\
+            만일 이 반복 과정이 어떤 상태로 수렴한다는 것을 보장할 수 있다면 그 수렴 상태의 노드 feature를 Content- and Link-Aware Node Embedding으로 볼 수 있겠습니다.\
+            다음 단락에서 이 과정을 반드시 수렴하기 위한 조건을 설명하겠습니다. 
+            `
+        }
+    },
+    {
+        "header": { "eng": 'Convergence of the Node Features', "kor": '수렴 조건' },
+        "content": {
+            'type': 'paragraphs',
+            'eng': ``,
+            'kor': `\
+            $$ Z_{t+1} = C + SZ_{t}$$\
+            
+            $$ Z_{t+1} = C + S(C + SZ_{t-1}) = C + SC + S^2Z_{t-1}$$\
+            
+            $$ Z_{t+1} = C+ SC + S^2C + \\dots + S^tC + S^{t+1}Z_{0}$$\
+            
+            $$ Z_{t+1} = (I+S+S^2+\\dots+S^t)C + S^{t+1}C$$\
+            
+            $$ Z_{t+1} = (I+S+S^2+\\dots+S^t + S^{t+1})C$$\
+            
+            $$ Z_{t+1} = (\\sum_{i=0}^{t+1}S^i)C$$\
+            
+
+            $Z_{t+1}$가 수렴하기 위해서는 $\\sum_{i=0}^{t+1}S^i$가 수렴해야하고, 그러려면 $S^{t+1}$가 $0$으로 수렴해야한다.\
+
+            만약 $S$가 Stochastic Matrix라면, $S$의 eigen value들의 집합 $\\Lambda$는 1) $1 \\in \\Lambda$이고, 2) $\\forall\\lambda \\in \\Lambda, |\\lambda|\\leq 1$인 특징이 있다.\
+
+            Stochastic Matrix인 $S$를 Eigen Decompose 하면 다음과 같다.\
+
+            $$S = Q P Q^{-1}$$\
+
+            $Q \\in R^{|V| \\times |V|}$는 각 column이 $S$의 Eigenvector인 Square Matrix이다.\
+            $P \\in R^{|V| \\times |V|}$는 Diagonal Matrix로, Diagonal Elements들이 $S$의 Eigen value들로 이루어져 있다.\
+            
+            $$S^{t+1} = Q P^{t+1} Q^{-1}$$\
+
+            이므로 $S^{t+1}$가 $0$으로 수렴하가 위해서는 $P^{t+1}$가 $0$으로 수렴해야한다.\
+            그런데 $P$는 반드시 $1$을 원소로 가지면서 다른 원소들은 모두 $1$보다 작으므로, $P^{t+1}$는 $0$과 $1$을 원소로 같은 행렬로 수렴한다.\
+
+            만일 S에 $\\gamma \\in (0,1)$을 곱해준다면 $P^{t+1}$는 0으로 수렴하고, $S^{t+1}$가 0으로 수렴하고, $\\sum_{i=0}^{t+1}S^i$가 수렴하고, $Z_{t+1}$가 수렴한다.\
+
+            정리하자면, 1) S는 Stochastic Matrix이어야한다 2) S에 $\\gamma \\in (0,1)$을 곱해주어야한다.
+
+            $$ z_v = c_v + \\gamma\\sum_{u\\in nbrs(v)}p_{vu}z_u$$\
+            $$ Z_{t+1} = C + \\gamma PZ_{t}$$\
+        
+            $P \\in R ^ { |V| \\times |V| }$는 Transition Matrix입니다. 임의의 두 노드 $v,u$에 대한 전이 확률을 다음과 같이 정의합니다.\
+
+            $$p_{vu} = \\sigma(s(z_v,z_u))\\;if\\;v\\;and\\;v\\;is\\;adjacent,\\; else\\;0$$
+
+            $s(z_v, z_u)$로는 간단하게 dot product나 cosine simliarity를 사용할 수 있습니다.\
+            
+            `
+        }
+    },
+    {
+        "header": { "eng": 'Adopting Asymmetric Similarity Measure', "kor": '비대칭 유사도 척도의 도입' },
+        "content": {
+            'type': 'paragraphs',
+            'eng': ``,
+            'kor': `\
+            $$ s(z_v, z_u) = {(Az_v)}^{-1}Bz_u$$\
+
+            다만, 주어진 네트워크가 Directed Graph인 경우 cosine similarity를 그 방향성을 반영하지는 못합니다.
+            다$v\\rarr u$와 $u\\rarr v$에 대해 같은 유사도를 계산합니다. `
+        }
+    },
+    {
+        "header": { "eng": 'Approximation of the Loss', "kor": '손실함수의 근사' },
+        "content": {
+            'type': 'paragraphs',
+            'eng': ``,
+            'kor': ``
+        }
+    },
+
+
 ]
 
 export const plot = {

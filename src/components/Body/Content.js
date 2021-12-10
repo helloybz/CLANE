@@ -1,4 +1,5 @@
 import { Grid, List, ListItem, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
+import MathJax from 'react-mathjax2';
 
 export function Content({ type, content, language }) {
 
@@ -27,13 +28,52 @@ export function Content({ type, content, language }) {
         }
         return (
             <Grid container component={List}>
-                {paragraphs.map((paragraph, i) => (
-                    <Grid item key={i} xs={12} component={ListItem}>
-                        <Typography paragraph>
-                            {paragraph}
-                        </Typography>
-                    </Grid>
-                ))}
+                {paragraphs.map((paragraph, i) => {
+                    var paragraph_trimmed = paragraph.trim()
+                    if (paragraph_trimmed.startsWith("$$")) {
+                        return (
+                            <Grid i
+                                tem key={i} xs={12} component={ListItem}
+                                justifyContent='center'
+                                sx={{ overflow: 'auto' }}
+                            >
+                                <MathJax.Context
+                                    input='tex'
+                                    script="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.0.0/es5/latest?tex-mml-chtml.js"
+                                >
+                                    <MathJax.Text text={paragraph_trimmed} />
+                                </MathJax.Context>
+                            </Grid>
+                        )
+
+                    } else if (paragraph_trimmed.includes("$")) {
+
+                        return (
+                            <Grid item key={i} xs={12} component={ListItem}>
+                                <MathJax.Context
+                                    input='ascii'
+                                    options={{
+                                        asciimath2jax: {
+                                            useMathMLspacing: true,
+                                            delimiters: [["$", "$"]],
+                                            preview: "none",
+                                        }
+                                    }}>
+                                    <Typography paragraph>
+                                        <MathJax.Text text={paragraph_trimmed} />
+                                    </Typography>
+                                </MathJax.Context>
+                            </Grid>
+                        )
+                    }
+                    else {
+                        return (<Grid item key={i} xs={12} component={ListItem}>
+                            <Typography paragraph>
+                                {paragraph}
+                            </Typography>
+                        </Grid>)
+                    }
+                })}
             </Grid>
         )
     } else if (type === 'table') {
