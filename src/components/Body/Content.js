@@ -14,7 +14,9 @@ export function Content({ type, content, language }) {
             <Grid container component={List}>
                 {sentences.map((sentence, i) => (
                     <Grid key={i} item xs={12} component={ListItem}>
-                        - {sentence}
+                        <Typography >
+                            - {sentence}
+                        </Typography>
                     </Grid>
                 ))}
             </Grid>
@@ -32,14 +34,21 @@ export function Content({ type, content, language }) {
                     var paragraph_trimmed = paragraph.trim()
                     if (paragraph_trimmed.startsWith("$$")) {
                         return (
-                            <Grid i
-                                tem key={i} xs={12} component={ListItem}
+                            <Grid item key={i} xs={12} component={ListItem}
                                 justifyContent='center'
                                 sx={{ overflow: 'auto' }}
                             >
                                 <MathJax.Context
                                     input='tex'
                                     script="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.0.0/es5/latest?tex-mml-chtml.js"
+                                    options={{
+                                        tex: {
+                                            packages: { '[+]': ['amsmath'] },
+                                            tags: 'ams',
+                                            tagIndent: "2em",
+                                            tagSide: "right",
+                                        }
+                                    }}
                                 >
                                     <MathJax.Text text={paragraph_trimmed} />
                                 </MathJax.Context>
