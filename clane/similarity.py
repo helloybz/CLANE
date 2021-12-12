@@ -23,7 +23,13 @@ class CosineSimilarity:
         v1: torch.Tensor,
         v2: torch.Tensor,
     ) -> torch.Tensor:
-        return v1.dot(v2).div(v1.pow(2).sum().sqrt() * v2.pow(2).sum().sqrt())
+        if v1.dim() == 1:
+            v1 = v1.unsqueeze(0)
+        if v2.dim() == 1:
+            v2 = v2.unsqueeze(0)
+        v1 = v1.unsqueeze(1)
+        v2 = v2.unsqueeze(-1)
+        return v1.matmul(v2).squeeze(1).squeeze(1).div(v1.pow(2).sum().sqrt() * v2.pow(2).sum().sqrt())
 
 
 class AsymmertricSimilarity(nn.Module):
