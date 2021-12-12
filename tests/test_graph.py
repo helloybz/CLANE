@@ -4,6 +4,7 @@ import unittest
 import torch
 
 from clane.graph import Graph
+from clane.similarity import CosineSimilarity
 
 
 class TestGraph(unittest.TestCase):
@@ -22,3 +23,23 @@ class TestGraph(unittest.TestCase):
         for v in g.V:
             self.assertIsInstance(v.c, torch.Tensor)
             self.assertEqual(v.c.shape[-1], self.d)
+
+    def test_build_A(self):
+        g = Graph(
+            data_root=self.data_root,
+            embedding_dim=self.d,
+        )
+        self.assertEqual(g.A.shape[0], 34)
+        self.assertEqual(g.A.shape[1], 34)
+
+        self.assertEqual(g.get_nbrs(33).tolist(), [8, 9, 13, 14, 15, 18, 19, 20, 22, 23, 26, 27, 28, 29, 30, 31, 32])
+
+    def test_build_P(self):
+        g = Graph(
+            data_root=self.data_root,
+            embedding_dim=self.d,
+        )
+        P = g.build_P(CosineSimilarity())
+        P = P.to_dense()
+        self.assertEqual(P.shape[0], 34)
+        self.assertEqual(P.shape[1], 34)
