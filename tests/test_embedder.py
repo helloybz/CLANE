@@ -24,4 +24,4 @@ class TestEmbedder(unittest.TestCase):
 
     def test_iterate_if_embeddings_are_updated(self):
         self.embedder.iterate()
-        self.assertNotEqual((self.g.Z - self.g.C).sum(), 0)
+        self.assertNotEqual((self.g.Z - self.g.C).abs().sum(), 0)
