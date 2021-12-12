@@ -102,10 +102,33 @@ class Graph(Dataset):
             return idx
 
     @property
+    def A(self):
+        return torch.sparse_coo_tensor(
+            indices=torch.LongTensor([[edge.src.idx, edge.dst.idx] for edge in self.E]).t(),
+            values=torch.ones(len(self.E)),
+            size=(len(self.V), len(self.V))
+        ).coalesce()
+
+    def get_nbrs(
+            self,
+            idx: int
+    ) -> torch.LongTensor:
+        return self.A[idx].coalesce().indices().squeeze()
+
+    def build_P(self, similarity):
+        edges = self.A.indices()
+        src_Z, dst_Z = self.Z[edges].split(1)
+        values = similarity(src_Z.squeeze(0), dst_Z.squeeze(0))
+        for src_idx in edges[0].unique():
+            values[edges[0] == src_idx] = values[edges[0] == src_idx].softmax(0)
+        return torch.sparse_coo_tensor(
+            indices=edges,
+            values=values,
+            size=(len(self.V), len(self.V))
+        ).coalesce()
+
+    @ property
     def Z(
         self,
     ) -> torch.Tensor:
         return torch.stack([v.z for v in self.V]).cpu()
-
-    def get_nbrs(self):
-        return 0
