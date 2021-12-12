@@ -43,6 +43,16 @@ class TestCosineSimilarity(unittest.TestCase):
             self.cosine_similarity(z_src, z_dst),
             self.cosine_similarity(z_dst, z_src))
 
+    def test_minibatched_input(self):
+        B, d = 4, 16
+        Z_src = torch.rand(B, d)
+        Z_dst = torch.rand(B, d)
+
+        self.assertEqual(
+            self.cosine_similarity(Z_src, Z_dst).size(),
+            torch.Size([B])
+        )
+
 
 class TestAsymmetricSimilarity(unittest.TestCase):
     def test_is_asymmetric(self):
