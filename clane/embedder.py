@@ -51,21 +51,13 @@ class Embedder(object):
     @torch.no_grad()
     def update_embeddings(
         self,
-    ) -> None:
-
-        prior_Z = self.graph.Z.clone()
-
-        for v in self.graph.V:
-            msgs = []
-            for edge in self.graph.E:
-                if edge.dst != v:
-                    continue
-                s_vu = self.similarity_measure(prior_Z[v.idx], prior_Z[edge.src.idx])
-                msg = prior_Z[edge.src.idx] * s_vu.sigmoid()
-                msgs.append(msg)
-            v.z = v.c + self.gamma * sum(msgs)
-
-        return (self.graph.Z - prior_Z).abs().sum()
+    ) -> torch.Tensor:
+        Z_current = self.graph.Z
+        P = self.graph.build_P(self.similarity_measure)
+        Z_next = self.graph.C + self.gamma * (P.matmul(Z_current))
+        diff = (Z_next - Z_current).abs().sum()
+        self.graph.set_Z(Z_next)
+        return diff
 
 
 class IterativeEmbedder(Embedder):

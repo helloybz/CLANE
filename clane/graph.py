@@ -132,3 +132,7 @@ class Graph(Dataset):
         self,
     ) -> torch.Tensor:
         return torch.stack([v.z for v in self.V]).cpu()
+
+    def set_Z(self, Z: torch.Tensor) -> None:
+        for z, v in zip(Z, self.V):
+            v.z = z
