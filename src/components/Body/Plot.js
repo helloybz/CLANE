@@ -57,7 +57,7 @@ export function Plot({ data, title }) {
                         "color": theme.palette.border.dark,
                     },
                     viewWindow: {
-                        max: 20,
+                        max: 15,
                         min: -20,
                     },
                 }

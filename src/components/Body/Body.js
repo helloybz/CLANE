@@ -67,7 +67,7 @@ export function Body() {
                     lg: "40rem",
                 }
             }}>
-                <Plot data={plot.zachary} title='Zachary Karate Club' />
+                <Plot data={plot.zachary} title="Applying CLANE to Zachary's Karate Club data with randomly initialized 2-dim content embeddings. " />
             </Grid>
             {
                 data.map((section, i) => (

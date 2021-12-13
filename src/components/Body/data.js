@@ -6,7 +6,12 @@ export const data = [
         },
         "content": {
             'type': 'list',
-            'eng': ``,
+            'eng': `\
+            This is an implementation of my master's thesis, Content- and Link-Aware Node Embedding.
+            Given a network, CLANE computes the nodes' embeddings by aggregating their linkage relations as welll as their own contents information.
+            Every node emits and absorbs information along the links, while keeping their content information unchanged.
+            The convergence of these propagation sequence has been proved in this study, and the converged feature are considered as the node features.\
+            `,
             'kor': `\
             석사 학위 논문으로, 네트워크 내 노드들의 연결관계 뿐만 아니라 노드의 내적 정보까지도 함께 반영한 임베딩을 구하기 위한 방법을 제안합니다.
             노드의 내적 정보에, 이웃 노드의 정보를 유사도에 비례하여 취합하여 노드의 정보를 전파합니다.
@@ -22,11 +27,15 @@ export const data = [
         "content": {
             'type': 'paragraphs',
             'eng': `\
-                CLANE is an abbreviation for 'Content- and Link-Aware Node Embedding'.\
-                It is a study of how to compute the embeddings of the nodes in a given network, with recognizing the contents of the nodes themselves and the connection among them.
+            Given a graph $G=(V,E)$, a feature vector $z_v \\in \\mathbb{R}^d$ of a node $v \\in V$ is defined below,\
 
-                The algorithm is an iteration of 
-                `,
+            $$z_v = c_v + \\sum_{u\\in nbrs(v)}z_u \\tag{1}$$\
+
+            $c_v \\in \\mathbb{R}^d$ is a vector representation of $v$'s content information.\
+            Content information refers a node's only internal information like location, age, or sex of a user in social networks, words in documents of wikipedia.\
+            $nbrs(v)$ is a set of adjacent nodes of node $v$.\
+            $v$'s feature vector is represented as sum of its content feature and aggregation of its neighbors' feature vector.\
+            `,
             'kor': `\
             임의의 Graph $G=(V,E)$가 주어졌을 때, 임의의 노드 $v\\inV$의 특징 벡터 $z_v \\in \\mathbb{R}^d$를 다음과 같이 정의합니다.\
             
