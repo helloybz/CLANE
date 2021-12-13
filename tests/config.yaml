@@ -3,6 +3,8 @@ graph:
 
 similarity:
   method: "CosineSimilarity"
+  kwargs:
+    foo: "bar"
 
 embedder:
   gamma: 0.76

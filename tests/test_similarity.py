@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from clane.similarity import CosineSimilarity
+from clane.similarity import AsymmertricSimilarity, CosineSimilarity
 
 
 class TestCosineSimilarity(unittest.TestCase):
@@ -34,4 +34,45 @@ class TestCosineSimilarity(unittest.TestCase):
             self.cosine_similarity(v1, v2).item(),
             -1,
             places=4
+        )
+
+    def test_is_symmetric(self):
+        z_src = torch.rand(10)
+        z_dst = torch.rand(10)
+        self.assertEqual(
+            self.cosine_similarity(z_src, z_dst),
+            self.cosine_similarity(z_dst, z_src))
+
+    def test_minibatched_input(self):
+        B, d = 4, 16
+        Z_src = torch.rand(B, d)
+        Z_dst = torch.rand(B, d)
+
+        self.assertEqual(
+            self.cosine_similarity(Z_src, Z_dst).size(),
+            torch.Size([B])
+        )
+
+
+class TestAsymmetricSimilarity(unittest.TestCase):
+    def test_is_asymmetric(self):
+        z_src = torch.rand(10)
+        z_dst = torch.rand(10)
+        similarity = AsymmertricSimilarity(n_dim=10)
+
+        self.assertEqual(similarity(z_src, z_dst), similarity(z_src, z_dst))
+        self.assertNotEqual(similarity(z_src, z_dst), similarity(z_dst, z_src))
+
+    def test_minibatched(self):
+        z_src = torch.rand(4, 10)
+        z_dst = torch.rand(4, 10)
+        similarity = AsymmertricSimilarity(n_dim=10)
+
+        self.assertEqual(
+            similarity(z_src, z_dst).sub(similarity(z_src, z_dst)).abs().sum(),
+            0
+        )
+        self.assertNotEqual(
+            similarity(z_src, z_dst).sub(similarity(z_dst, z_src)).abs().sum(),
+            0
         )

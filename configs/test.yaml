@@ -1,8 +1,0 @@
-graph:
-  embedding_dim: 64
-
-similarity:
-  method: "CosineSimilarity"
-
-embedder:
-  gamma: 0.76

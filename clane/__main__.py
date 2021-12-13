@@ -1,12 +1,15 @@
 import argparse
+import json
 from pathlib import Path
 import yaml
 
 import numpy as np
+import torch
 
 from clane import similarity
 from clane.graph import Graph
 from clane.embedder import Embedder
+from clane.embedder import IterativeEmbedder
 
 
 def embedding(args):
@@ -19,6 +22,7 @@ def embedding(args):
     else:
         raise FileNotFoundError(f"Config file not found. {args.config_file.absolute()}")
 
+    device = torch.device('cuda') if args.gpu else torch.device('cpu')
     g = Graph(
         data_root=args.data_root,
         **hparams["graph"],
@@ -39,27 +43,49 @@ def embedding(args):
     except Exception:
         raise
 
-    similarity_measure = similarity_measure()
-
-    embedder = Embedder(
-        graph=g,
-        similarity_measure=similarity_measure,
-        **hparams["embedder"],
+    similarity_measure = similarity_measure(
+        **hparams['similarity']['kwargs'],
     )
-    embedder.iterate(save_all=args.save_all)
+
+    if hasattr(similarity_measure, 'parameters'):
+        embedder = IterativeEmbedder(
+            graph=g,
+            similarity_measure=similarity_measure,
+            device=device,
+            save_history=args.save_history,
+            num_workers=args.num_workers,
+            **hparams["embedder"],
+        )
+    else:
+        embedder = Embedder(
+            graph=g,
+            similarity_measure=similarity_measure,
+            save_history=args.save_history,
+            **hparams["embedder"],
+        )
+    embedder.iterate()
 
     print("Saving the results.")
     if not args.output_root.exists():
         args.output_root.mkdir(parents=True, exist_ok=True)
-    if args.save_all:
-        for iter, history in enumerate(g.embedding_history):
-            np.save(
-                args.output_root.joinpath(f'Z_{iter}.npy'),
-                history.numpy(),
-            )
+
+    if args.save_history:
+        for iter, history in enumerate(embedder.history):
+
+            args.output_root.joinpath(f'{iter}').mkdir(parents=True, exist_ok=True)
+
+            if 'Z' in history.keys():
+                for iter_Z, Z in enumerate(history["Z"]):
+                    np.save(
+                        args.output_root.joinpath(f'{iter}/Z_{iter_Z}.npy'),
+                        Z.cpu().numpy(),
+                    )
+            if 'P_loss' in history.keys():
+                with open(args.output_root.joinpath(f'{iter}/P_loss.json'), 'w') as io:
+                    json.dump([loss.item() for loss in history["P_loss"]], io)
     np.save(
         args.output_root.joinpath('Z.npy'),
-        g.Z,
+        g.Z.cpu().numpy(),
     )
 
     print(f"The embeddings are stored in {args.output_root.joinpath('Z.npy').absolute()}.")
@@ -81,8 +107,14 @@ def get_parser():
         help="Path to the training configuration yaml file."
     )
     parser.add_argument(
-        "--save_all", action='store_true',
+        "--save_history", action='store_true',
         help="If true, it saves the embeddings for every iteration."
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=0,
+    )
+    parser.add_argument(
+        "--gpu", action='store_true'
     )
     return parser
 
