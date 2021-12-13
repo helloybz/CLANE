@@ -60,8 +60,6 @@ export function Body() {
             >
                 CLANE
             </Grid>
-            <Grid item xs={11}>
-            </Grid>
             <Grid item xs={11} md={8} sx={{
                 marginBottom: "1rem",
                 height: {

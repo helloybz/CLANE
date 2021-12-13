@@ -7,6 +7,7 @@ export function Plot({ data, title }) {
     const [iter, setIter] = useState(0)
     window.setTimeout(() => {
         setIter((iter + 1) % 10)
+
     }, 1000)
     return (
         <Chart
@@ -16,15 +17,16 @@ export function Plot({ data, title }) {
             data={data[iter]}
             options={{
                 animation: {
-                    duration: 100,
-                },
-                title: title + iter,
-                titleTextStyle: {
-                    color: "white",
+                    startup: true,
+                    duration: (iter !== 0) ? 1000 : 200,
                     easing: 'out'
                 },
+                title: title,
+                titleTextStyle: {
+                    color: "white",
+                },
                 legend: {
-                    position: "right",
+                    position: "none",
                     textStyle: { color: 'white', fontSize: "2rem" },
                 },
                 backgroundColor: theme.palette.background.dark,

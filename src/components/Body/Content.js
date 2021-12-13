@@ -58,7 +58,8 @@ export function Content({ type, content, language }) {
                     } else if (paragraph_trimmed.includes("$")) {
 
                         return (
-                            <Grid item key={i} xs={12} component={ListItem}>
+                            <Grid item key={i} xs={12} component={ListItem}
+                                sx={{ fontSize: '5rem' }}>
                                 <MathJax.Context
                                     input='ascii'
                                     options={{
@@ -87,7 +88,7 @@ export function Content({ type, content, language }) {
         )
     } else if (type === 'table') {
         return (
-            <div>
+            <Grid item xs={12} sx={{ overflow: 'auto' }} >
                 <Typography
                     variant="h5">{content.eng.title}</Typography>
                 <Table>
@@ -108,7 +109,7 @@ export function Content({ type, content, language }) {
                         ))}
                     </TableBody>
                 </Table>
-            </div>
+            </Grid>
         )
     } else {
         return (
