@@ -31,10 +31,32 @@ export const data = [
 
             $$z_v = c_v + \\sum_{u\\in nbrs(v)}z_u \\tag{1}$$\
 
-            $c_v \\in \\mathbb{R}^d$ is a vector representation of $v$'s content information.\
+            $c_v \\in \\mathbb{R}^d$ is a content feature vector, feature vector for $v$'s content information.\
             Content information refers a node's only internal information like location, age, or sex of a user in social networks, words in documents of wikipedia.\
             $nbrs(v)$ is a set of adjacent nodes of node $v$.\
-            $v$'s feature vector is represented as sum of its content feature and aggregation of its neighbors' feature vector.\
+            $v$'s feature vector is represented as sum of its content feature and aggregation of its neighbors' feature vectors.\
+
+            When aggregating the neighbors' feature vector, the feature vectors are weighted with similarity between $v$ and each node in $nbrs(v)$.\
+            The more similar $v$ and $u \\in nbrs(v)$, the more $v$ takes $u$'s information than others.
+            Cosine similarity or simple dot product can be used as $s$.\
+            Equation (1) can be rewritten as below,\
+
+            $$z_v = c_v + \\sum_{u\\in nbrs(v)}s(z_v,z_u)z_u \\tag{2}$$\
+
+            Also, Equantion (2) can be expanded to matrix form, for all node set $V$, as below,\
+
+            $$ Z_{t+1} = C + SZ_{t},\\quad Z_0=C \\tag{3}$$\
+            
+            $Z_t \\in \\mathbb{R}^{|V|\\times d}$ is set of feature vectors of each node in $V$ after $t$ times propagation.\
+            $C \\in \\mathbb{R}^{|V|\\times d}$ is set of content feature vectors of each node in $V$.\
+            $C$ is used as $Z_0$, itinital state of the nodes feature vector.\
+            $S \\in \\mathbb{R}^{|V|\\times |V|}$ is an adjacency Matrix, whose element $s_{ij}$ is determined as below,\
+
+            $$s_{ij} = \\begin{cases} s(z_{v_i}, z_{v_j}) & \\text{if $v_i$ and $v_j$ is adjacent} \\\\  0 & \\text{else} \\end{cases}$$\
+            
+            But, it is hard to know how long the propagation should be iterated with Equation (3).\
+            If it is ensured that the feature vectors converge after the few iterations, we can consider the converged state of the feature vector as 'Content- and Link-Aware Node Embedding'.\
+            The proof and condition of the convergence is explained in the next section.\
             `,
             'kor': `\
             임의의 Graph $G=(V,E)$가 주어졌을 때, 임의의 노드 $v\\inV$의 특징 벡터 $z_v \\in \\mathbb{R}^d$를 다음과 같이 정의합니다.\
@@ -50,7 +72,6 @@ export const data = [
             그러면 자신과 비슷한 특징을 가진 이웃 노드의 정보는 더 많이 반영하고, 덜 비슷한 특징을 가진 이웃 노드의 정보는 덜 반영할 수 있게 됩니다.\
             유사도 척도 $s$로는 코사인 유사도를 사용합니다.\
             이에 따라 식(1)은 다음과 같이 다시 정의할 수 있습니다.\
-            
             
             $$z_v = c_v + \\sum_{u\\in nbrs(v)}s(z_v,z_u)z_u \\tag{2}$$\
             
@@ -74,7 +95,51 @@ export const data = [
         "header": { "eng": 'Convergence of the Node Features', "kor": '수렴 조건' },
         "content": {
             'type': 'paragraphs',
-            'eng': ``,
+            'eng': `\
+            In this section, we are going to prove convergence of the node features under some condition.\
+
+            $$ \\lim_{t \\rightarrow \\infty} Z_t = Z$$ 
+
+            Equation (3) can be represented in terms of $S^i$ like below,\
+            
+            $$ \\begin{eqnarray} \
+            Z_{t+1} &=& C + SZ_{t} \\\\ \
+            &=& C + S(C + SZ_{t-1}) \\\\ \
+            &=& C + SC + S^2Z_{t-1} \\\\ \
+            &=& C+ SC + S^2C + \\dots + S^tC + S^{t+1}Z_{0} \\\\ \
+            &=& (I+S+S^2+\\dots+S^t)C + S^{t+1}C \\\\ \
+            &=& (I+S+S^2+\\dots+S^t + S^{t+1})C \\\\ \
+            &=& (\\sum_{i=0}^{t+1}S^i)C \
+            \\end{eqnarray}$$\
+            
+            For $Z_{t+1}$ to converge, $\\sum_{i=0}^{t+1}S^i$ should converge.\
+            And so on, $S^{t+1}$ should converge into $0$.\
+            By the way, $S$ can be eigen decomposed like below,\
+
+            $$S = Q P Q^{-1}$$\
+
+            $Q \\in R^{|V| \\times |V|}$ is a square matrix where its columns are Eigenvectors of $S$.\
+            $P \\in R^{|V| \\times |V|}$ is a diagonal matrix where its diagonal elements are Eigenvalues of $S$.\
+            By using $P$ and $Q$, $S^{t+1}$ can be represented like below,\
+
+            $$S^{t+1} = Q P^{t+1} Q^{-1}$$\
+
+            For $S^{t+1}$ to converge in to $0$, $P^{t+1}$ also should converge into $0$.\
+            If $S$ is a stochastic matrix, $\\Lambda$, set of $S$'s eigenvalues 1) has $1$ as one of its elements, 2) $\\forall\\lambda \\in \\Lambda, |\\lambda|\\leq 1$\
+            So, all of the elements in $P$ consists of values whose absolute are $\\leq 1$ including $1$.\
+            With $\\gamma in (0,1)$ as coefficient for $P$, equation below is established.\
+
+            $$(\\gamma S)^{t+1} = Q (\\gamma P)^{t+1} Q^{-1}$$\
+
+            With these two condition, 1) $S$ is a stochastic matrix, 2) multifying $\\gamma \\in (0,1)$ to $S$, Equation (2) and (3) can be rewritten like below,\
+
+            $$ z_v = c_v + \\gamma\\sum_{u\\in nbrs(v)}p_{vu}z_u$$\
+            $$ Z_{t+1} = C + \\gamma \\Pi Z_{t},\\:Z_0=C$$\
+        
+            , where $\\Pi \\in R ^ { |V| \\times |V| }$ is a stochastic matrix. An element of $\\pi_{vu}$ is defined like below,\
+
+            $$\\pi_{vu} = \\begin{cases} \\frac{e^{s(z_v,z_u)}}{\\sum_{k \\in nbrs(v)}e^{s(z_v,z_k)}} & \\text{if $v$ and $u$ is adjacent} \\\\  0 & \\text{else} \\end{cases}$$\
+            `,
             'kor': `\
             위 행렬 표현식은 일종의 점화식입니다.\
             이 점화식의 일반항을 아래와 같이 구할 수 있습니다.\
@@ -130,12 +195,9 @@ export const data = [
             'type': 'list',
             'eng': `\
             CORA datset, citation network, is used for the experiment.
-            Same hyper parameters as decribed in the paper are used to both the original Deepwalk and the cloned Deepwalk.
-            128 dimensions for the vector representations
-            40 steps per walk.
-            80 walks per node.
-            10 window size. (10+10+1 when counting for both directions)
-            Logistic Regression is used for the classification.
+            Compare the score after applying CLANE to the score before applying.
+            1,433 dimensions which is number of dimensions of the given bag-of-word content embedidngs.
+            Logistic Regression is used for classification.
             The ratio of train and test split is varies from 1:9 to 9:1. 
             The scores are averaged after 10 runs.`,
             'kor': `\
