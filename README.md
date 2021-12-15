@@ -35,8 +35,17 @@ The pair of node should has a form like `[source_node_id]\t[target_node_id]`.
 All of the hyper-parameters of deepwalk is controlled in this `yaml` file.\
 Below is an example of the config file.
 ```yaml
-gamma: 0.5
-tolerence: 10
+graph:
+  embedding_dim: 2
+
+similarity:
+  method: "CosineSimilarity"
+  kwargs:
+    foo: "bar"
+
+embedder:
+  gamma: 0.76
+  tolerence: 10
 ```
 
 ## Experiments
