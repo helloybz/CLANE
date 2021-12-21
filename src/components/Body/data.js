@@ -9,13 +9,16 @@ export const data = [
             'eng': `\
             This is an implementation of my master's thesis, Content- and Link-Aware Node Embedding.
             Given a network, CLANE computes the nodes' embeddings by aggregating their linkage relations as welll as their own contents information.
-            Every node emits and absorbs information along the links, while keeping their content information unchanged.
-            The convergence of these propagation sequence has been proved in this study, and the converged feature are considered as the node features.\
-            `,
+            Every node emits and absorbs information along the links at the same time, while keeping their content information unchanged.
+            The convergence of the series of these propagations has been proved in this study, and the converged feature are considered as the node features.
+            The figure above shows the method computing the embedding of the nodes whose content embeddings are initialized randomly.
+            The accuracy score of node label classification for those embeddings is about 20% higher than that of randomly initialized embeddings.`,
             'kor': `\
-            석사 학위 논문으로, 네트워크 내 노드들의 연결관계 뿐만 아니라 노드의 내적 정보까지도 함께 반영한 임베딩을 구하기 위한 방법을 제안합니다.
-            노드의 내적 정보에, 이웃 노드의 정보를 유사도에 비례하여 취합하여 노드의 정보를 전파합니다.
-            반복적인 전파과정 끝에 노드 임베딩이 반드시 수렴하는 조건을 제안하여, 학습 파라미터없이 노드의 임베딩을 구할 수 있습니다.\
+            석사 학위 논문으로, 주어진 네트워크 내 존재하는 노드들의 연결관계뿐만 아니라 노드의 내적 정보까지도 함께 반영한 임베딩을 구하는 방법을 제안합니다.
+            노드의 내적 정보에, 유사도에 비례하게 취합한 이웃 노드의 정보를 더해가면서 노드의 정보를 전파합니다.
+            반복적인 전파과정 끝에 노드 임베딩이 특정 조건하에 반드시 수렴함을 증명하였습니다.
+            위 예시는 무작위로 생성한 내적 정보 임베딩으로도 유의미한 엠베딩을 학습 파라미터 없이 계산하는 것을 보여줍니다.
+            위 예시에 대한 분류 실험에서도 메소드 적용 후 분류 정확도가 약 20% 상승했습니다.\
             `
         }
     },
