@@ -43,7 +43,7 @@ export const data = [
 
             $$z_v = c_v + \\sum_{u\\in nbrs(v)}s(z_v,z_u)z_u \\tag{2}$$\
 
-            Also, Equantion (2) can be expanded to matrix form, for all node set $V$, as below,\
+            Also, Equation (2) can be expanded to matrix form, for all node set $V$, as below,\
 
             $$ Z_{t+1} = C + SZ_{t},\\quad Z_0=C \\tag{3}$$\
             

@@ -40,7 +40,7 @@ export function Content({ type, content, language }) {
                             >
                                 <MathJax.Context
                                     input='tex'
-                                    script="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.0.0/es5/latest?tex-mml-chtml.js"
+                                    script="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/core.min.js"
                                     options={{
                                         tex: {
                                             packages: { '[+]': ['amsmath'] },
