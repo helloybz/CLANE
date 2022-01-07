@@ -8,187 +8,282 @@ export const data = [
             'type': 'list',
             'eng': `\
             This is an implementation of my master's thesis, Content- and Link-Aware Node Embedding.
-            Given a network, CLANE computes the nodes' embeddings by aggregating their linkage relations as welll as their own contents information.
-            Every node emits and absorbs information along the links at the same time, while keeping their content information unchanged.
+            Given a network, CLANE computes the nodes' embeddings by aggregating the node's high-order neighbors' information.
+            CLANE preserves the nodes' feature to prevent that the nodes' representations are over-smoothed by polynomial progatation.
             The convergence of the series of these propagations has been proved in this study, and the converged feature are considered as the node features.
             The figure above shows the method computing the embedding of the nodes whose content embeddings are initialized randomly.
             The accuracy score of node label classification for those embeddings is about 20% higher than that of randomly initialized embeddings.`,
             'kor': `\
-            석사 학위 논문으로, 주어진 네트워크 내 존재하는 노드들의 연결관계뿐만 아니라 노드의 내적 정보까지도 함께 반영한 임베딩을 구하는 방법을 제안합니다.
-            노드의 내적 정보에, 유사도에 비례하게 취합한 이웃 노드의 정보를 더해가면서 노드의 정보를 전파합니다.
-            반복적인 전파과정 끝에 노드 임베딩이 특정 조건하에 반드시 수렴함을 증명하였습니다.
-            위 예시는 무작위로 생성한 내적 정보 임베딩으로도 유의미한 엠베딩을 학습 파라미터 없이 계산하는 것을 보여줍니다.
-            위 예시에 대한 분류 실험에서도 메소드 적용 후 분류 정확도가 약 20% 상승했습니다.\
+            High-order 이웃 노드들의 정보를 취합하되, 노드 feature를 보존함으로써 정보가 과하게 smoothing되는 것을 방지하며 노드의 임베딩을 손쉽게 계산하는 GNN 기법을 제안합니다.
+            모델을 학습할 때, Curriculum Training과 같은 효과를 갖는 Negative Sampling 기법을 제안합니다.
+            위 예시는 Karate Club Dataset에 대해서 무작위로 생성한 노드 Feature에 CLANE을 적용하여 노드 엠베딩을 계산하는 과정을 보여줍니다.
+            위 예시에서 계산한 노드 임베딩에 대한 분류 실험에서 분류 정확도가 노드 Feature를 그대로 사용한 것에 비해 약 20% 상승했습니다.\
+            `
+        }
+    },
+    {
+        "header": {
+            'eng': 'Terminology',
+            'kor': 'Background: Graph 이론 기본 용어',
+        },
+        "content": {
+            'type': 'paragraphs',
+            'eng': ``,
+            'kor': `\
+            이 단락에서는 먼저 이 포스트에서 사용할 Graph 관련 용어들을 정리하겠습니다.\
+
+            임의의 그래프 $G$는 $G=(V,E,A)$로 표기합니다.\
+            $V={v_1, v_2, ..., v_n}$는 그래프 $G$ 내 노드의 집합이며, $|V| = n$입니다.\
+            $E={(v_i, v_j) | v_i, v_j \\in V}$는 그래프 $G$ 내 모든 연결의 집합입니다.\
+            그리고 $A \\in \\mathbb{R}^{n \\times n}$는 그래프 $G$의 인접 행렬입니다.\
+
+            $X \\in \\mathbb{R}^{n \\times d}$는 $V$에 속하는 노드들의 feature이며 노드의 content에 대한 임베딩입니다.\
+            $d$는 노드 feature의 차원 수입니다.\
+            노드 $v$의 feature는 $x_v \\in \\mathbb{R}^{d}$로 표기합니다.\
+            또, $Z \\in \\mathbb{R}^{n \\times d}$는 노드들의 임베딩을 나타내며,\
+            노드 $v$의 임베딩은 $z_v \\in \\mathbb{R}^{d}$로 표기합니다.\
+
+            $I$는 단위 행렬로, 대각 성분이 모두 1이고 그 외 성분은 모두 0인 정사각행렬입니다.\
+            `
+        }
+    },
+    {
+        "header": {
+            'eng': 'Problem Definition',
+            'kor': 'Background: Spatial-based GNN',
+        },
+        "content": {
+            'type': 'paragraphs',
+            'eng': ``,
+            'kor': `\
+            Spatial-based GNN은 임의의 노드와 이웃하는 노드들의 정보를 취합하여 가공함으로써 그 노드의 임베딩을 계산하는 GNN을 일컫는 말입니다.\
+            그 framework를 아래와 같이 표기할 수 있습니다.\
+
+            $$Z = f(G)X$$\
+
+            $f(\\cdot)$은 Node aggregation function으로, 앞으로 학습시킬 모델이 그 역할을 합니다.\
+            $G$는 보통 $A$를 변형한 (혹은 정규화한) $\\tilde{A}$로 대신합니다.\
+            $f(\\cdot)$가 취합하는 이웃노드의 범위에 따라 세부 항목으로 분류할 수 있습니다.\
+
+            하나는 Linear Propagation으로, $f(\\cdot)$가 직접 이웃하는 (first-order) 노드들만 취합합니다.\
+            서로 다른 두 함수 $\\Phi, \\quad \\Psi: v \\in V \\rightarrow w_v in \\mathbb{R}$가 주어졌을 때, \
+            가중치를 곱한 $v$의 feature와, $v$의 이웃 노드들의 feature의 가중치 합을 더한 값으로 노드 $v$의 임베딩을 계산합니다.\
+            이를 수식으로 표현하면 아래와 같습니다.\
+
+            $$z_v= \\Phi (v) x_v + \\sum_{u \\in N(v)} \\Psi(u) x_u$$\
+            
+            위 식을 더 간략히 표현하면 $Z= \\phi X + \\psi \\tilde{A} X  = (\\phi I + \\psi \\tilde{A}) X $입니다.\
+            $\\phi, \\psi \\in \\mathbb{R}^{n \\times n}$는 $k$번째 대각 성분이 $v_k$의 가중치인 대각행렬입니다.\
+            다만, 보통 $A$를 그대로 쓰지 않고 변형하거나 정규화한 $\\tilde{A}$를 씁니다.\
+            결론적으로 Linear Propagation을 수행하는 Spatial-based GNN의 $f(\\cdot)$은 다음과 같이 일반화할 수 있으며\
+            $\\phi$, $\\psi$, $\\tilde{A}$에 따라 다양한 알고리즘을 구현할 수 있습니다.\
+            
+            $$f(G)= \\phi I + \\psi \\tilde{A}$$\
+            
+            다른 하나는 Polynomial Propagation으로, $f(\\cdot)$가 직접 이웃하는 노드들뿐만 아니라, 그 너머의 이웃(high-order)까지 취합합니다.\
+            Linear Propagation보다 더 풍부한 정보를 포함한 임베딩을 계산할 수 있다는 장점이 있지만,\
+            너무 높은 차수(order)까지 취합한다면 모든 노드가 비슷비슷한 임베딩을 가질 수 있다는 단점이 있습니다.\
+            수식으로 표현하면 다음과 같습니다.\
+            
+            $$\\begin{eqnarray} z_v = \\Phi(v) x_v &+& \\sum_{u^{(1)} \\in N(v)} \\Psi^{(1)} (u^{(1)}) x_{u^{(1)}} \\\\ \
+            &+& \\sum_{u^{(2)} \\in N(u^{(1)})} \\Psi^{(2)} (u^{(2)}) x_{u^{(2)}} \\\\ \
+            &+& \\cdots \\\\ \
+            &+& \\sum_{u^{(k)} \\in N(u^{(k-1)})} \\Psi^{(k)} (u^{(k)}) x_{u^{(k)}} \\\\ \
+            \\end{eqnarray}$$
+            
+            $\\Psi^{(k)}(\\cdot)$, $u^{(k)}$는 각각 $k$-order의 weight function, 이웃 노드입니다.\
+            위 식을 아래와 같이 간단히 표현하면 할 수 있습니다.\
+
+            $$\\begin{eqnarray} Z &=& \\phi X + \\psi^{(1)} \\tilde{A}^{1} X + \\psi^{(2)} \\tilde{A}^{2} X + \\cdots + \\psi^{(k)} \\tilde{A}^{k} X \\\\ \
+            &=& (\\phi I + \\sum_{j=1}^{k} \\psi^{(j)} \\tilde{A}^{j}) X \\\\ \
+            \\end{eqnarray}$$\
+
+            Polynomial Propagation을 수행하는 Spatial-based GNN의 $f(\\cdot)$는 다음과 같이 일반화할 수 있으며\
+            $\\phi$, $\\psi$, $\\tilde{A}, k$에 따라 다양한 알고리즘을 구현할 수 있습니다.\
+            
+            $$f(G)= \\phi I + \\sum_{j=1}^{k} \\psi^{(j)} \\tilde{A}^{j}$$
             `
         }
     },
     {
         "header": {
             'eng': 'Propagation Rule',
-            'kor': '전파 방법',
+            'kor': 'CLANE: Overview',
         },
         "content": {
             'type': 'paragraphs',
-            'eng': `\
-            Given a graph $G=(V,E)$, a feature vector $z_v \\in \\mathbb{R}^d$ of a node $v \\in V$ is defined below,\
-
-            $$z_v = c_v + \\sum_{u\\in nbrs(v)}z_u \\tag{1}$$\
-
-            $c_v \\in \\mathbb{R}^d$ is a content feature vector, feature vector for $v$'s content information.\
-            Content information refers a node's only internal information like location, age, or sex of a user in social networks, words in documents of wikipedia.\
-            $nbrs(v)$ is a set of adjacent nodes of node $v$.\
-            $v$'s feature vector is represented as sum of its content feature and aggregation of its neighbors' feature vectors.\
-
-            When aggregating the neighbors' feature vector, the feature vectors are weighted with similarity between $v$ and each node in $nbrs(v)$.\
-            The more similar $v$ and $u \\in nbrs(v)$, the more $v$ takes $u$'s information than others.
-            Cosine similarity or simple dot product can be used as $s$.\
-            Equation (1) can be rewritten as below,\
-
-            $$z_v = c_v + \\sum_{u\\in nbrs(v)}s(z_v,z_u)z_u \\tag{2}$$\
-
-            Also, Equation (2) can be expanded to matrix form, for all node set $V$, as below,\
-
-            $$ Z_{t+1} = C + SZ_{t},\\quad Z_0=C \\tag{3}$$\
-            
-            $Z_t \\in \\mathbb{R}^{|V|\\times d}$ is set of feature vectors of each node in $V$ after $t$ times propagation.\
-            $C \\in \\mathbb{R}^{|V|\\times d}$ is set of content feature vectors of each node in $V$.\
-            $C$ is used as $Z_0$, itinital state of the nodes feature vector.\
-            $S \\in \\mathbb{R}^{|V|\\times |V|}$ is an adjacency Matrix, whose element $s_{ij}$ is determined as below,\
-
-            $$s_{ij} = \\begin{cases} s(z_{v_i}, z_{v_j}) & \\text{if $v_i$ and $v_j$ is adjacent} \\\\  0 & \\text{else} \\end{cases}$$\
-            
-            But, it is hard to know how long the propagation should be iterated with Equation (3).\
-            If it is ensured that the feature vectors converge after the few iterations, we can consider the converged state of the feature vector as 'Content- and Link-Aware Node Embedding'.\
-            The proof and condition of the convergence is explained in the next section.\
-            `,
+            'eng': ``,
             'kor': `\
-            임의의 Graph $G=(V,E)$가 주어졌을 때, 임의의 노드 $v\\inV$의 특징 벡터 $z_v \\in \\mathbb{R}^d$를 다음과 같이 정의합니다.\
+            본 포스트에서 소개하는 CLANE은 두 개의 과정을 번갈아 반복하며 임베딩을 구합니다.\
+            마치 GAN 구조로 모델을 학습할 때, (G를 고정한 채) D를 학습하고, (D를 고정한 채) G를 학습하는 과정을 번갈아 반복하는 것과 같습니다.\
+            CLANE은 1) 가중치 함수 $\\Psi(\\cdot)$을 고정한 채 Propagation을 수행해 $Z$을 계산하고,\
+            2) $Z$를 고정한 채 $\\Psi(\\cdot)$을 학습하는 과정을 번갈아 반복합니다.\
+            만약, $\\Psi(\\cdot)$가 학습 파라미터를 가지지않는 함수라면, 2)번 과정을 생략할 수 있습니다.\
             
-            $$z_v = c_v + \\sum_{u\\in nbrs(v)}z_u \\tag{1}$$\
+            $\\Psi(\\cdot)$은 두 노드간 유사도를 기반으로 가중치를 계산합니다.\
+            임의의 유사도 척도 $S(\\cdot)$가 주어졌을 때, 아래와 같이 $\\Psi(\\cdot)$을 정의합니다.\
 
-            $c_v \\in \\mathbb{R}^d$는 노드 $v$의 내적 정보에 대한 특징 벡터입니다.\
-            $c_v$는 다른 노드들과 관계없는 $v$만의 고유한 정보를 담고 있어, $v$의 정보가 바뀌지 않는 한 항상 일정한 값을 갖습니다.\
-            $nbrs(v)$는 노드 $v$와 인접한 이웃 노드의 집합입니다.\
-            이처럼, $z_v$는 $v$의 내적 정보를 담은 특징 벡터와 $v$의 이웃 노드들의 특징 벡터의 합을 더한 것으로 표현됩니다.\
-
-            $v$의 이웃 노드 $u \\in nbrs(v)$의 정보를 취합할 때, $v$와 $u$의 유사도 $s(z_v,z_u) \\in \\mathbb{R}$에 따라 취합하는 정도를 달리했습니다.\
-            그러면 자신과 비슷한 특징을 가진 이웃 노드의 정보는 더 많이 반영하고, 덜 비슷한 특징을 가진 이웃 노드의 정보는 덜 반영할 수 있게 됩니다.\
-            유사도 척도 $s$로는 코사인 유사도를 사용합니다.\
-            이에 따라 식(1)은 다음과 같이 다시 정의할 수 있습니다.\
+            $$\\Psi(u |v) = \\frac{e ^ {S(v,u)}} {\\sum_{k \\in N(v)} e^{S(v,k)}} \\tag{1}$$
             
-            $$z_v = c_v + \\sum_{u\\in nbrs(v)}s(z_v,z_u)z_u \\tag{2}$$\
-            
-            식(2)를 행렬 표현식으로 확장하여 모든 노드 $V$에 대한 식으로 표현하면 다음과 같습니다.\
-            
-            $$ Z_{t+1} = C + SZ_{t},\\quad Z_0=C \\tag{3}$$\
-            
-            $Z_t \\in \\mathbb{R}^{|V|\\times d}$는 전파 과정을 $t$번 거친 후, 모든 노드 $V$에 대한 특징벡터의 모음입니다.\
-            $C \\in \\mathbb{R}^{|V|\\times d}$는 모든 노드 $V$의 내적 정보의 특징 벡터의 모음으로, 전파 과정을 시작하기 전 특징벡터의 초기값으로 쓰입니다.\
-            $S \\in \\mathbb{R}^{|V|\\times |V|}$는 인접 행렬(Adjacency Matrix)로 $S$의 원소 $s_{i,j}$는 다음과 같이 정의합니다.\
-            
-            $$s_{ij} = \\begin{cases} s(z_{v_i}, z_{v_j}) & \\text{if $v_i$ and $v_j$ is adjacent} \\\\  0 & \\text{else} \\end{cases}$$\
-            
-            하지만, 식(3)의 전파 방법으로는 전파 과정을 얼마나 반복해야 하는지 정하기 어렵습니다.\
-            만일 이 반복 과정끝에 모든 노드의 특징 벡터가 어떤 상태로 제각각 수렴한다는 것을 보장할 수 있다면, 그 수렴 상태에서 노드의 특징벡터를 Content- and Link-Aware Node Embedding으로 볼 수 있겠습니다.\
-            다음 단락에서 노드의 특징벡터가 반드시 수렴하기 위한 조건을 설명하겠습니다. 
+            먼저 1)번의 과정을 설명하기 위해 편의상 $S(\\cdot)$을 dot product로 정의하겠습니다.\
+            그 후, 2)번 과정을 설명하기 위해 $S(\\cdot)$을 임의의 Neural Network 모델로 정의하고,\
+            $S(\\cdot)$을 안정적이고 빠르게 학습하기 위해 본 연구에서 제안하는 Negative Sampling 방법을 추가로 설명하겠습니다.\
             `
         }
     },
     {
-        "header": { "eng": 'Convergence of the Node Features', "kor": '수렴 조건' },
+        "header": { "eng": 'CLANE: Propagation', "kor": 'CLANE: Propagation' },
         "content": {
             'type': 'paragraphs',
-            'eng': `\
-            In this section, we are going to prove convergence of the node features under some condition.\
-
-            $$ \\lim_{t \\rightarrow \\infty} Z_t = Z$$ 
-
-            Equation (3) can be represented in terms of $S^i$ like below,\
-            
-            $$ \\begin{eqnarray} \
-            Z_{t+1} &=& C + SZ_{t} \\\\ \
-            &=& C + S(C + SZ_{t-1}) \\\\ \
-            &=& C + SC + S^2Z_{t-1} \\\\ \
-            &=& C+ SC + S^2C + \\dots + S^tC + S^{t+1}Z_{0} \\\\ \
-            &=& (I+S+S^2+\\dots+S^t)C + S^{t+1}C \\\\ \
-            &=& (I+S+S^2+\\dots+S^t + S^{t+1})C \\\\ \
-            &=& (\\sum_{i=0}^{t+1}S^i)C \
-            \\end{eqnarray}$$\
-            
-            For $Z_{t+1}$ to converge, $\\sum_{i=0}^{t+1}S^i$ should converge.\
-            And so on, $S^{t+1}$ should converge into $0$.\
-            By the way, $S$ can be eigen decomposed like below,\
-
-            $$S = Q P Q^{-1}$$\
-
-            $Q \\in R^{|V| \\times |V|}$ is a square matrix where its columns are Eigenvectors of $S$.\
-            $P \\in R^{|V| \\times |V|}$ is a diagonal matrix where its diagonal elements are Eigenvalues of $S$.\
-            By using $P$ and $Q$, $S^{t+1}$ can be represented like below,\
-
-            $$S^{t+1} = Q P^{t+1} Q^{-1}$$\
-
-            For $S^{t+1}$ to converge in to $0$, $P^{t+1}$ also should converge into $0$.\
-            If $S$ is a stochastic matrix, $\\Lambda$, set of $S$'s eigenvalues 1) has $1$ as one of its elements, 2) $\\forall\\lambda \\in \\Lambda, |\\lambda|\\leq 1$\
-            So, all of the elements in $P$ consists of values whose absolute are $\\leq 1$ including $1$.\
-            With $\\gamma in (0,1)$ as coefficient for $P$, equation below is established.\
-
-            $$(\\gamma S)^{t+1} = Q (\\gamma P)^{t+1} Q^{-1}$$\
-
-            With these two condition, 1) $S$ is a stochastic matrix, 2) multifying $\\gamma \\in (0,1)$ to $S$, Equation (2) and (3) can be rewritten like below,\
-
-            $$ z_v = c_v + \\gamma\\sum_{u\\in nbrs(v)}p_{vu}z_u$$\
-            $$ Z_{t+1} = C + \\gamma \\Pi Z_{t},\\:Z_0=C$$\
-        
-            , where $\\Pi \\in R ^ { |V| \\times |V| }$ is a stochastic matrix. An element of $\\pi_{vu}$ is defined like below,\
-
-            $$\\pi_{vu} = \\begin{cases} \\frac{e^{s(z_v,z_u)}}{\\sum_{k \\in nbrs(v)}e^{s(z_v,z_k)}} & \\text{if $v$ and $u$ is adjacent} \\\\  0 & \\text{else} \\end{cases}$$\
-            `,
+            'eng': ``,
             'kor': `\
-            위 행렬 표현식은 일종의 점화식입니다.\
-            이 점화식의 일반항을 아래와 같이 구할 수 있습니다.\
+            CLANE은 직접 이웃하는(fisrt-order) 노드들의 feature가 아닌 '임베딩'을 취합하여\
+            노드 $v$의 임베딩 $z_v$를 계산하는 방법을 제안합니다.\
+            이웃 하는 노드의 feature가 아니라 '임베딩'을 재귀적으로 취합하므로,\
+            Polynomial Propagation의 효과를 볼 수 있습니다.\
+
+            전파 단계에서는 $\\Phi(\\cdot)$는 업데이트되지 않고 고정되어 있어야합니다.\
             
+            $$z_v^{(t)} = \\sum_{u \\in N(v)} \\Psi(u|v) z_u^{(t-1)}, \\quad z_v^{(0)}= x_v  \\tag{2}$$\
+            
+            $Z$가 수렴할 때까지 식(2)처럼 전파를 반복합니다.\
+            무작정 여러번 반복하면 모든 노드의 임베딩이 비슷해질테니 노드 feature를 보존하도록 아래와 같이 전파식을 수정합니다.\
+
+            $$z_v^{(t)} = x_v + \\sum_{u \\in N(v)} \\Psi(u|v) z_u^{(t-1)}, \\quad z_v^{(0)}= x_v  \\tag{3}$$\
+
+            식(2)와 같은 방법으로 전파를 계속 해나가면, $Z$는 수렴하지 않을 것입니다.\
+            $\\lim_{t \\rightarrow \\infty} Z^{(t)}$가 수렴함을 보장하기 위해서 $\\Psi(\\cdot)$을 다음과 같이 수정합니다.\
+
+            $$\\Psi(\\cdot) = \\gamma \\frac{e ^ {S(v,u)}} {\\sum_{k \\in N(v)} e^{S(v,k)}}, \\quad where \\quad \\gamma \\in (0, 1) \\tag{4}$$
+            
+            이제부터는 식(4)와 같이 $\\Psi(\\cdot)$을 정의하면 $\\lim_{t \\rightarrow \\infty} Z^{(t)}$가 반드시 $Z$로 수렴함을 증명하겠습니다.\
+            식(1)처럼 $\\Psi(\\cdot)$를 정의했을 때, 식(3)을 간단하게 표현하면 다음과 같이 쓸 수 있습니다.\
+
+            $$Z^{(t)} = X + \\Pi Z^{(t-1)} \\tag{5}$$\
+
+            $\\Pi \\in \\mathbb{R}^{n \\times n}$는 Stochastic Matrix이며,\
+            $\\Pi$의 원소 $\\Pi_{i,j}$는 $(v_i, v_j) \\ in E$인 경우 $Psi(v_j|v_i)$이고 그렇지 않은 경우에는 $0$입니다.\
+            식(5)를 전개하여 정리하면 아래와 같이 'Background: Spatial-based GNN'에서 살펴 본 Polynomial Progation의 일반식으로 표현할 수 있습니다.
+
             $$ \\begin{eqnarray} \
-            Z_{t+1} &=& C + SZ_{t} \\\\ \
-            &=& C + S(C + SZ_{t-1}) \\\\ \
-            &=& C + SC + S^2Z_{t-1} \\\\ \
-            &=& C+ SC + S^2C + \\dots + S^tC + S^{t+1}Z_{0} \\\\ \
-            &=& (I+S+S^2+\\dots+S^t)C + S^{t+1}C \\\\ \
-            &=& (I+S+S^2+\\dots+S^t + S^{t+1})C \\\\ \
-            &=& (\\sum_{i=0}^{t+1}S^i)C \
+            Z^{(t)} &=& X + \\Pi Z^{(t-1)} \\\\ \
+                    &=& X + \\Pi (X + \\Pi Z^{(t-1)}) = X + \\Pi X + \\Pi^2 Z^{(t-1)}\\\\ \
+                    &=& X + \\Pi X + \\Pi^2 (X + \\Pi Z^{(t-2)}) = X + \\Pi X + \\Pi^2 X + \\Pi^3 Z^{(t-2)}\\\\ \
+                    &=& X + \\Pi X + \\Pi^2 X + \\dots + \\Pi^{t-1} X + \\Pi^{t} Z^{(0)} \\\\ \
+                    &=& X + \\Pi X + \\Pi^2 X + \\dots + \\Pi^{t-1} X + \\Pi^{t} X \\\\ \
+                    &=& (I + \\Pi + \\Pi^2 + \\dots + \\Pi^t)X \\\\ \
+                    &=& (I + \\sum_{j=1}^{t}\\Pi^j)X = \\{ I + \\sum_{j=1}^{t}(\\Pi A)^j \\} X \
             \\end{eqnarray}$$\
+
+            $\\lim_{t \\rightarrow \\infty} Z^{(t)}$가 수렴하기 위해서는\
+            $\\lim_{t \\rightarrow \\infty} \\Pi^{t}$가 $0$으로 수렴해야함을 알 수 있습니다.\
+            만약 임의의 노드 $v_i$가 $v_j$와 연결되어 있고 $v_i$의 outdegree가 1이어서, $\\Pi_{ij}$는 $1$이 되는 경우에는\
+            $\\lim_{t \\rightarrow \\infty} \\Pi^{t}$가 $0$으로 수렴하지 않습니다.\
+            $\\Pi$에 $\\gamma \\in \\mathbb{R} \\in (0,1)$을 곱해준다면 $0$으로 수렴하고,\
+            $\\lim_{t \\rightarrow \\infty} Z^{(t)}$가 반드시 수렴하게 됩니다.\
+            따라서, CLANE의 전파식은 다음과 같이 정리할 수 있습니다.\
             
-            $Z_{t+1}$가 수렴하기 위해서는 $\\sum_{i=0}^{t+1}S^i$가 수렴해야하고,\
-            이 급수가 수렴하기 위해서는 $S^{t+1}$이 $0$으로 수렴해야합니다.\
-            한편, $S$를 고윳값분해(Eigen Decomposition)하면 다음과 같습니다.\
+            $$ z_v = x_v + \\gamma\\sum_{u\\in N(v)}\\Pi_{v,u} z_u$$\
+            `
+        }
+    },
+    {
+        "header": { 'eng': '', 'kor': 'CLANE: Update Weight Function' },
+        "content": {
+            'type': 'paragraphs',
+            'eng': ``,
+            'kor': `\
+            두 노드 사이의 유사도를 계산하는 함수 $S(\\cdot)$는 dot product나 cosine similarity뿐만 아니라, 학습 파라미터를 가지는 함수일 수도 있습니다.\
+            dot product나 cosine similarity 역시 효율적인 유사도 함수이지만, 특정 상황에서는 그 대칭성이 한계점으로 작용할 수도 있습니다.\
+            예를 들어, Directed Graph $G$의 임의의 두 노드 $v$와 $u$에 대해서 $(v,u) \\in E$이지만 $(v,u) \\notin E$일 때, $S(\\cdot)$가 대칭성을 가질 경우,\
+            $S(u,v)$ 역시 높은 유사도를 띄는 경우가 있습니다.\
 
-            $$S = Q P Q^{-1}$$\
+            본 연구에서는 Directed Graph에서도 연결의 방향성까지 고려한 유사도를 계산하기위해 아래와 같은 유사도 함수를 제안합니다.\
 
-            $Q \\in R^{|V| \\times |V|}$는 각 열이 $S$의 고유벡터(Eigenvector)인 정사각행렬(Square Matrix)입니다.\
-            $P \\in R^{|V| \\times |V|}$는 대각행렬(Diagonal Matrix)로, 대각성분(Diagonal Element)들이 $S$의 고윳값(Eigenvalue)들로 이루어져 있습니다.\
-            $S^{t+1}$을 $P$와 $Q$를 이용해 다음과 같이 표현할 수 있습니다.\
+            $$S(v_{src}, v_{tgt}) = f_{src} (z_{v_{src}}) \\cdot f_{tgt} (z_{v_{tgt}}) \\quad where \\quad v_{src}, v_{tgt} \\in V$$
 
-            $$S^{t+1} = Q P^{t+1} Q^{-1}$$\
-
-            $S^{t+1}$가 $0$으로 수렴하기 위해서는 $P$의 모든 원소들의 절댓값이 1보다 작아, $P^{t+1}$가 $0$으로 수렴하면 됩니다.\
+            서로 다른 두 매핑 함수 $f_{src}, f_{tg\\t} : \\mathbb{R}^{d} \\rightarrow  \\mathbb{R}^{d}$는 각각 source 노드의 임베딩과 target 노드의 임베딩을 다른 feature space로 할당합니다.\
+            매핑된 두 임베딩의 dot product를 계산하여 이를 $v_{src}$의 Context에서 $v_{tg\\t}$에 대한 유사도로 활용합니다.\
+            이 유사도 함수는 비대칭성을 가져 $S(v,u) = S(u,v)$가 항상 성립하지는 않습니다.\
+            가장 단순한 예시로 아래와 같은 $S(\\cdot)$을 구성할 수 있습니다.\
             
-            만약 $S$가 확률 행렬(Stochastic Matrix)이라면, $S$의 고윳값들의 집합 $\\Lambda$는 1) $1 \\in \\Lambda$이고, \
-            2) $\\forall\\lambda \\in \\Lambda, |\\lambda|\\leq 1$인 특징을 갖습니다.\
-            따라서 $P$의 대각성분들은 1을 포함하고 절댓값이 1보다 작은 값들로 구성됩니다.\
-            만일 $S$에 $\\gamma \\in (0,1)$을 곱해준다면 $(\\gamma P)^{t+1}$은 $0$으로 수렴하므로 결과적으로 $Z_{t+1}$가 수렴합니다.\
+            $$\\begin{eqnarray}\
+              f_{src}(x) = W_{src}(x) \\\\ \
+              f_{tgt}(x) = W_{tgt}(x) \
+              \\end{eqnarray}$$
 
-            $$(\\gamma S)^{t+1} = Q (\\gamma P)^{t+1} Q^{-1}$$\
+            $W_{src}, W_{tg\\t} \\in \\mathbb{R}^{d \\times d}$는 학습 가능한 파라미터입니다.\
+            이 유사도 함수를 학습하기위한 손실함수를 아래와 같이 정의합니다.\
+            
+            $$\\begin{eqnarray} \
+            J(\\theta) &=& -\\ln Pr(G | \\theta ) \\\\ \
+                       &=& - \\ln \\prod_{v \\in V} \\bigg[ \
+                                  \\prod_{u \\in N(v)} Pr \\big( (v,u) \\in E | \\theta \\big) \
+                                  \\prod_{w \\notin N(v)} \\big\\{ 1 - Pr \\big( (v,w) \\in E | \\theta \\big) \\big\\} \
+            \\bigg]\
+            \\end{eqnarray}$$\
 
-            정리하자면 1) $S$는 확률 행렬이어야하고, 2) $S$에 $\\gamma \\in (0,1)$을 곱해준다면, \
-            앞 단락에서 소개한 전파 방법을 반복하면 노드의 특징벡터는 반드시 수렴합니다.\
-            식(2)와 식(3)을 다음과 같이 고쳐 쓸 수 있습니다.\
+            임의의 두 노드가 유사할수록 그 두 노드가 서로 연결되어 있을 가능성이 높다라는 전제하에,\
+            주어진 그래프 $G$ 내 임의의 노드 $v$에 대해서, 이웃하는 노드와는 유사도가 높아 연결되어 있을 확률이 가능한 높도록,\
+            이웃하지 않는 노드와는 유사도가 낮아 연결되어 있을 확률이 가능한 낮도록 합니다.\
 
-            $$ z_v = c_v + \\gamma\\sum_{u\\in nbrs(v)}p_{vu}z_u$$\
-            $$ Z_{t+1} = C + \\gamma \\Pi Z_{t},\\:Z_0=C$$\
-        
-            $\\Pi \\in R ^ { |V| \\times |V| }$는 확률 행렬입니다.\
-            $\\Pi$의 임의의 원소 $\\pi_{vu}$는 다음과 같이 정의합니다.\
+            CLANE의 학습과정을 요약하자면, 1) 고정된 $S_{\\theta}(\\cdot)$으로 앞 단락에서 설명한 바와 같이 수렴한 $Z$을 얻고, 2) 수렴한 임베딩 $Z$에 맞추어 $S_{\\theta}(\\cdot)$를 업데이트합니다.\
+            3) 업데이트된 새로운 $S_{\\theta}(\\cdot)$가지고 1)부터 다시 시작합니다.\
+            그리고 $Z$와 $S_{\\theta}(\\cdot)$ 모두 더 이상 개선되지 않을 때, iteration을 멈춥니다.\
 
-            $$\\pi_{vu} = \\begin{cases} \\frac{e^{s(z_v,z_u)}}{\\sum_{k \\in nbrs(v)}e^{s(z_v,z_k)}} & \\text{if $v$ and $u$ is adjacent} \\\\  0 & \\text{else} \\end{cases}$$\
+            학습 결과 얻어진 $S_{\\theta}(\\cdot)$는 Link Prediction과 같은 downstream task에도 활용이 가능합니다.\
+            `
+        }
+    },
+    {
+        "header": { 'eng': '', 'kor': 'CLANE: Negative Sampling' },
+        "content": {
+            'type': 'paragraphs',
+            'eng': ``,
+            'kor': `\
+            앞 단락의 손실함수를 계산할 때, 연결되어 있지 않은 노드쌍(negative sample)의 수가 너무 많아 시간복잡도가 커지는 문제가 있습니다.\
+            이 문제를 해결하기 위해 많은 연구들에서는 일부의 negative sample에 대해서만 학습하는 Negative Sampling을 도입하고 있습니다.\
+            본 연구에서는 GNN의 문제설정에 충실할 뿐만 아니라, 모델의 성능에 따라 학습하는 데이터를 달리해 계산량을 효과적으로 줄이는 Negative Sampling 기법을 제안합니다.\
+            
+            앞 단락에서 살펴 본 손실함수의 Gradient를 계산해보면 아래와 같습니다.\
+            
+            $$\\begin{eqnarray} \
+            \\frac{J(\\theta)} {\\partial \\theta} = - \\sum_{v \\in V} \\Bigg\\{ \
+            &\\sum_{u \\in N(v)}& \\frac {1} {Pr \\big( (v, u) \\in E | \\theta \\big)} \\frac {Pr \\big( (v, u) \\in E | \\theta \\big)} {\\partial \\theta} \\\\ \
+             + &\\sum_{w \\notin N(v)}& \\frac {1} {1 - Pr \\big( (v,w) \\in E | \\theta \\big)} {(-1)} \\frac {Pr \\big( (v,w) \\in E | \\theta \\big)} {\\partial \\theta} \
+                \\Bigg\\} \
+            \\end{eqnarray}$$\
+
+            두 노드 간 연결이 존재할 확률 $Pr( (v_i, v_j) \\in E | \\theta ))$을 두 노드간 유사도의 sigmoid, $\\sigma ( S ( v_i, v_j | \\theta) )$로 계산한다면 아래와 같이 식을 정리할 수 있습니다.\
+
+            $$\\begin{eqnarray} \
+            \\frac{J(\\theta)} {\\partial \\theta} = - \\sum_{v \\in V} \\Bigg\\{ \
+            &\\sum_{u \\in N(v)}& \\frac {1} {\\sigma \\big( S (v, u | \\theta ) \\big)} \\frac {\\sigma \\big( S (v, u | \\theta ) \\big)} {\\partial \\theta} \\\\ \
+            + &\\sum_{w \\notin N(v)}& \\frac {1} {1 - \\sigma \\big( S (v, w | \\theta ) \\big)} {(-1)} \\frac {\\sigma \\big( S (v, w | \\theta ) \\big)} {\\partial \\theta} \
+            \\Bigg\\} \\\\ \
+            = - \\sum_{v \\in V} \\Bigg\\{ \
+            &\\sum_{u \\in N(v)}& \\frac {1} {\\sigma \\big( S (v, u | \\theta ) \\big)} \\sigma \\big( S (v, u | \\theta ) \\big) \\big\\{ 1-\\sigma \\big( S (v, u | \\theta ) \\big) \\big\\} \\frac {S (v, u | \\theta )} {\\partial \\theta} \\\\ \
+            + &\\sum_{w \\notin N(v)}& \\frac {1} {1 - \\sigma \\big( S (v, w | \\theta ) \\big)} {(-1)} \\sigma \\big( S (v, w | \\theta ) \\big) \\big\\{ 1-\\sigma \\big( S (v, w | \\theta ) \\big) \\big\\} \\frac {S (v, w | \\theta )} {\\partial \\theta} \
+            \\Bigg\\} \\\\ \
+            = - \\sum_{v \\in V} \\Bigg\\{ \
+            &\\sum_{u \\in N(v)}&  \\big\\{ 1-\\sigma \\big( S (v, u | \\theta ) \\big) \\big\\} \\frac {S (v, u | \\theta )} {\\partial \\theta}  \
+            + \\sum_{w \\notin N(v)} \\sigma \\big( S (v, w | \\theta ) \\big) \\frac {-S (v, w | \\theta )} {\\partial \\theta} \
+            \\Bigg\\}  \
+            \\end{eqnarray}$$\
+
+            위 식의 두번째 항은 negative sample들에 대한 gradient로, 다음과 같은 이산 분포를 따르는 랜덤변수 $X$의 기댓값으로 생각할 수 있습니다.\
+
+            $$\\begin{eqnarray} \
+            &Pr&( X = \\frac {-S (v, w | \\theta )} {\\partial \\theta}) &=&  \\sigma \\big( S (v, w | \\theta ) \\big) \\\\ \
+            &Pr&( X = 0 )  &=&  1- \\sigma \\big( S (v, w | \\theta ) \\big) \
+            \\end{eqnarray}$$\
+
+            각각의 negative sample들에 대해서 서로 연결되어 있을 확률$Pr((v,w) \\in E | \\theta )$를 모수로 베르누이 시행을 한 후,\
+            성공한 negative sample에 대한 Gradient만 더함으로써, negative sample들에 대한 Gradient를 근사할 수 있습니다.\
+            베르누이 시행이 성공한 negative sample에 대한 Cost만 계산하여, Gradient 계산해도 결과는 같습니다.\
+            
+            유사도 모델의 학습 파라미터를 Xavier 초기화하면 임의의 노드쌍이 서로 연결되어 있을 확률의 기댓값이 0.5로 초기화됩니다.\
+            즉, 학습 초기에는 모든 샘플들을 균등하게 학습하고 학습이 진행될수록 학습이 어려운 샘플들에 위주로만 Curriculum Training 효과가 있습니다.\
             `
         }
     },
@@ -197,16 +292,11 @@ export const data = [
         "content": {
             'type': 'list',
             'eng': `\
-            CORA datset, citation network, is used for the experiment.
-            Compare the score after applying CLANE to the score before applying.
-            1,433 dimensions which is number of dimensions of the given bag-of-word content embedidngs.
-            Logistic Regression is used for classification.
-            The ratio of train and test split is varies from 1:9 to 9:1. 
             The scores are averaged after 10 runs.`,
             'kor': `\
             문헌 참조 네트워크인 CORA 데이터셋을 실험에 사용했습니다.
-            본 논문에서 제안하는 전파 과정을 적용하기 전과 후에 대해서 비교 실험을 했습니다.
-            노드 임베딩의 차원수를 조절할 수 없기 때문에, CORA 데이터셋에서 제공하는 1,433 차원의 bag-of-word 임베딩을 C로 사용했습니다.
+            본 논문에서 제안하는 노드 임베딩 기법을 적용하기 전과 후에 대해서 비교 실험을 했습니다.
+            노드 임베딩의 차원수를 조절할 수 없기 때문에, CORA 데이터셋에서 제공하는 1,433 차원의 bag-of-word 임베딩을 노드 Feature로 사용했습니다.
             분류 실험의 분류기로는 Logistic Regression을 사용했습니다.
             Train set와 Test set의 분할 비율은 1:9부터 9:1까지 적용했습니다.
             같은 조건의 실험을 10번 반복한 후 평균 점수를 계산했습니다.`,

@@ -71,8 +71,9 @@ export function Body() {
             </Grid>
             {
                 data.map((section, i) => (
-                    <Grid item xs={11} md={8} key={i} sx={{
-                        marginBottom: "1rem"
+                    <Grid item xs={11} md={7} key={i} sx={{
+                        marginBottom: "1rem",
+                        padding: { "xs": "0", "lg": "0 8rem" }
                     }} container>
                         <Grid item xs={12} component={Typography}
                             sx={{
@@ -87,10 +88,13 @@ export function Body() {
                         <Grid
                             item
                             xs={12}
+                            container
                             sx={{
                                 color: 'rgb(243, 246, 249)',
-                                fontSize: '1.2rem',
-                            }} container>
+                                fontSize: {
+                                    "xs": '1.2rem'
+                                }
+                            }} >
                             <Content type={section.content.type} content={section.content} language={language} />
                         </Grid>
                     </Grid>
