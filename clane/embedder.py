@@ -19,7 +19,11 @@ class Embedder(object):
         self.graph = graph
         self.similarity_measure = similarity_measure
         self.gamma = gamma
-        self.tolerence = tolerence
+        self.tolerences = {
+            "global": self.Tolerence(tolerence),
+            "propagation": self.Tolerence(tolerence),
+            "similarity_model": self.Tolerence(tolerence),
+        }
         self.save_history = save_history
         if save_history:
             self.history = [
@@ -28,6 +32,17 @@ class Embedder(object):
                     "loss_P": [],
                 }
             ]
+
+    class Tolerence:
+        def __init__(self, initial_value):
+            self.initial_value = initial_value
+            self.value = initial_value
+
+        def reset(self):
+            self.value = self.initial_value
+
+        def endure(self):
+            self.value -= 1
 
     def iterate(self):
         diff = Inf
