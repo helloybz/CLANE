@@ -21,8 +21,8 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(len(g.V), 34)
         self.assertEqual(len(g.E), 78)
         for v in g.V:
-            self.assertIsInstance(v.c, torch.Tensor)
-            self.assertEqual(v.c.shape[-1], self.d)
+            self.assertIsInstance(v.x, torch.Tensor)
+            self.assertEqual(v.x.shape[-1], self.d)
 
     def test_build_A(self):
         g = Graph(
@@ -41,5 +41,17 @@ class TestGraph(unittest.TestCase):
         )
         P = g.build_P(CosineSimilarity())
         P = P.to_dense()
+
         self.assertEqual(P.shape[0], 34)
         self.assertEqual(P.shape[1], 34)
+        self.assertAlmostEqual(P.sum(1).max().item(), 1, 3)
+        self.assertAlmostEqual(P.sum(1).min().item(), 0, 3)
+
+    def test_get_nbrs(self):
+        g = Graph(
+            data_root=self.data_root,
+            embedding_dim=self.d,
+        )
+        for v in g.V:
+            idx_nbrs = g.get_nbrs(v.idx)
+            self.assertEqual(idx_nbrs.dim(), 1)

@@ -33,8 +33,8 @@ def embedding(args):
     print(f" - {len(g.E)} edges")
     print(" - Content Embeddings:")
     print(f"     - dim : {g.d:3d}")
-    print(f"     - mean: {g.C.mean():5.2f}")
-    print(f"     - std : {g.C.std():5.2f}")
+    print(f"     - mean: {g.X.mean():5.2f}")
+    print(f"     - std : {g.X.std():5.2f}")
 
     try:
         similarity_measure = getattr(similarity, hparams["similarity"]["method"])
@@ -61,6 +61,7 @@ def embedding(args):
             graph=g,
             similarity_measure=similarity_measure,
             save_history=args.save_history,
+            device=device,
             **hparams["embedder"],
         )
     embedder.iterate()
@@ -70,19 +71,15 @@ def embedding(args):
         args.output_root.mkdir(parents=True, exist_ok=True)
 
     if args.save_history:
-        for iter, history in enumerate(embedder.history):
+        for iter, history_Z in enumerate(embedder.history["Z"]):
 
             args.output_root.joinpath(f'{iter}').mkdir(parents=True, exist_ok=True)
 
-            if 'Z' in history.keys():
-                for iter_Z, Z in enumerate(history["Z"]):
-                    np.save(
-                        args.output_root.joinpath(f'{iter}/Z_{iter_Z}.npy'),
-                        Z.cpu().numpy(),
-                    )
-            if 'P_loss' in history.keys():
-                with open(args.output_root.joinpath(f'{iter}/P_loss.json'), 'w') as io:
-                    json.dump([loss.item() for loss in history["P_loss"]], io)
+            for iter_Z, Z in enumerate(history_Z):
+                np.save(
+                    args.output_root.joinpath(f'{iter}/Z_{iter_Z}.npy'),
+                    Z.cpu().numpy(),
+                )
     np.save(
         args.output_root.joinpath('Z.npy'),
         g.Z.cpu().numpy(),

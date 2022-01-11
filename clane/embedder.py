@@ -10,14 +10,16 @@ from clane.graph import Graph
 class Embedder(object):
     def __init__(
         self,
-        graph:  Graph,
-        similarity_measure,
-        gamma:  float = 0.76,
-        tolerence: int = 10,
-        save_history: bool = False,
+        graph:              Graph,
+        similarity_measure: Similarity,
+        device,
+        gamma:              float = 0.76,
+        tolerence:          int = 10,
+        save_history:       bool = False,
     ) -> None:
         self.graph = graph
         self.similarity_measure = similarity_measure
+        self.device = device
         self.gamma = gamma
         self.tolerences = {
             "global": self.Tolerence(tolerence),
@@ -32,6 +34,7 @@ class Embedder(object):
                     "loss_P": [],
                 }
             ]
+        self.minimum_amount_updated_Z = Inf
 
     class Tolerence:
         def __init__(self, initial_value):
@@ -45,34 +48,52 @@ class Embedder(object):
             self.value -= 1
 
     def iterate(self):
-        diff = Inf
+        while True:
+            prev_Z = self.graph.Z.clone()
+            self.propagate()
+            amount_updated_Z_current = (self.graph.Z.clone() - prev_Z).abs().sum()
 
-        if self.save_history:
-            self.history = [
-                {
-                    "Z": [],
-                }
-            ]
-        while self.tolerence > 0:
-            if self.save_history:
-                self.history[0]["Z"].append(self.graph.Z)
-
-            diff_new = self.update_embeddings()
-            if diff_new >= diff:
-                self.tolerence -= 1
+            if self.minimum_amount_updated_Z > amount_updated_Z_current:
+                self.tolerences['global'].reset()
+                self.minimum_amount_updated_Z = amount_updated_Z_current
             else:
-                diff = diff_new
+                self.tolerences['global'].endure()
+
+            if self.tolerences['global'].value == 0:  # Embeddings are no more updated.
+                break
 
     @torch.no_grad()
-    def update_embeddings(
-        self,
-    ) -> torch.Tensor:
-        Z_current = self.graph.Z
+    def propagate(self):
+        '''
+        Propagate embeddings along edges until the embeddings converge.
+        The weights between the nodes are constant during propagation.
+        '''
         P = self.graph.build_P(self.similarity_measure)
-        Z_next = self.graph.C + self.gamma * (P.matmul(Z_current))
-        diff = (Z_next - Z_current).abs().sum()
-        self.graph.set_Z(Z_next)
-        return diff
+        minimum_amount_updated = Inf
+        self.tolerences['propagation'].reset()
+
+        while True:
+            current_Z = self.graph.Z.clone()
+            for idx_v, v in enumerate(self.graph.V):
+                x_v = v.x
+                idx_nbrs = self.graph.get_nbrs(v.idx)
+                if idx_nbrs.size(0) == 0:
+                    continue
+                z_nbrs = current_Z[idx_nbrs]
+                weights_nbrs = P[idx_v].coalesce().values().view(1, -1)
+                v.z = (x_v + self.gamma * (weights_nbrs.mm(z_nbrs))).squeeze(0)
+
+            amount_updated = (self.graph.Z - current_Z).absolute().sum()
+
+            if minimum_amount_updated > amount_updated:
+                self.tolerences['propagation'].reset()
+                minimum_amount_updated = amount_updated
+            else:
+                self.tolerences['propagation'].endure()
+
+            if self.tolerences['propagation'].value == 0:
+                return
+
 
 
 class IterativeEmbedder(Embedder):
