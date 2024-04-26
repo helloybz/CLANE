@@ -1,6 +1,165 @@
+[tool.poetry]
+name = "clane"
+version = "0.1.0"
+description = ""
+authors = ["Youngbeom Choi <helloybz@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+torch = "2.2.*"
+lightning = "2.*"
+pydotenv = "0.*"
+dependency-injector = "4.*"
+poethepoet = "0.*"
+
+
+[tool.poetry.group.dev.dependencies]
+pylint = "3.*"
+mypy = "1.*"
+isort = "5.*"
+ruff = "0.*"
+
 [build-system]
-requires = [
-    "setuptools>=42",
-    "wheel"
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poe.tasks]
+  [tool.poe.tasks.format]
+  help = "Run Ruff formatter"
+  cmd  = "ruff format ."
+
+  [tool.poe.tasks.format-check]
+  help = "Run Ruff formatter"
+  cmd  = "ruff format --check ."
+
+  [tool.poe.tasks.clean]
+  help = "Remove generated files"
+  cmd  = """
+    rm -rf .coverage
+           .mypy_cache
+           .pytest_cache
+           ./**/__pycache__
+  """
+
+  [tool.poe.tasks.test]
+  help = "Run unit and feature tests"
+  cmd  = "pytest --cov=serving tests/ --junitxml=build/xunit-result.xml --cov-report=xml:build/xunit-coverage.xml"
+
+  [tool.poe.tasks.types]
+  help = "Run the type checker"
+  cmd  = "mypy serving --ignore-missing-imports"
+
+  [tool.poe.tasks.lint]
+  help = "Run the linter"
+  cmd  = "pylint serving"
+
+  [tool.poe.tasks.ruff-lint]
+  help = "lint check"
+  cmd  = "ruff check ./serving"
+
+  [tool.poe.tasks.check]
+  help     = "Run all checks on the code base"
+  sequence = ["format-check", "ruff-lint", "types", "lint", "test"]
+
+[tool.coverage.run]
+branch = true
+omit = ["*/main.py"]
+relative_files = true
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if __name__ == .__main__.:",
+  "class .*\\bProtocol\\):",
+  "@(abc\\.)?abstractmethod"
 ]
-build-backend = "setuptools.build_meta"
+fail_under = 80
+show_missing = true
+
+[tool.coverage.xml]
+output = "coverage-reports/coverage.xml"
+
+[tool.mypy]
+strict = true
+incremental = false
+plugins = ["pydantic.mypy"]
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = ["R0903"]
+
+[tool.ruff]
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
+
+line-length = 88
+indent-width = 4
+
+target-version = "py38"
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
+# McCabe complexity (`C901`) by default.
+select = ["E4", "E7", "E9", "F"]
+ignore = []
+
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+# Enable auto-formatting of code examples in docstrings. Markdown,
+# reStructuredText code/literal blocks and doctests are all supported.
+#
+# This is currently disabled by default, but it is planned for this
+# to be opt-out in the future.
+docstring-code-format = false
+
+# Set the line length limit used when formatting code snippets in
+# docstrings.
+#
+# This only has an effect when the `docstring-code-format` setting is
+# enabled.
+docstring-code-line-length = "dynamic"
