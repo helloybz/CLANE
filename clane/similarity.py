@@ -2,7 +2,12 @@ import torch
 import torch.nn as nn
 
 
-class CosineSimilarity:
+class Similarity:
+    def is_trainable(self):
+        return isinstance(self, nn.Module)
+
+
+class CosineSimilarity(Similarity):
     """
     Cosine similarity between the two vector.
 
@@ -32,7 +37,7 @@ class CosineSimilarity:
         return v1.matmul(v2).squeeze(1).squeeze(1).div(v1.pow(2).sum().sqrt() * v2.pow(2).sum().sqrt())
 
 
-class AsymmertricSimilarity(nn.Module):
+class AsymmertricSimilarity(nn.Module, Similarity):
     def __init__(
             self,
             n_dim: int,

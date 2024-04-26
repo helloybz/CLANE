@@ -1,9 +1,10 @@
 import unittest
 from pathlib import Path
 
+import torch
+
 from clane import similarity
 from clane.embedder import Embedder
-
 from clane.graph import Graph
 
 
@@ -20,8 +21,9 @@ class TestEmbedder(unittest.TestCase):
             graph=self.g,
             similarity_measure=similarity.CosineSimilarity(),
             gamma=0.74,
+            device=torch.device('cpu')
         )
 
     def test_iterate_if_embeddings_are_updated(self):
         self.embedder.iterate()
-        self.assertNotEqual((self.g.Z - self.g.C).abs().sum(), 0)
+        self.assertNotEqual((self.g.Z - self.g.X).abs().sum(), 0)

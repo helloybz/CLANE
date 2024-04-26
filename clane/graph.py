@@ -11,12 +11,12 @@ class Vertex(object):
         self,
         idx: int,
         id_: str or int,
-        c: torch.Tensor,
+        x: torch.Tensor,
     ) -> None:
         self.idx = idx
         self.id_ = id_
-        self.c = c
-        self.z = c
+        self.x = x
+        self.z = x
         self.incoming_indices = []
         self.outgoing_indices = []
 
@@ -48,12 +48,12 @@ class Graph(Dataset):
 
         # Content Embeddings of the vertices, C.
         try:
-            self.C = torch.from_numpy(np.load(data_root.joinpath("C.npy")))
+            self.X = torch.from_numpy(np.load(data_root.joinpath("C.npy")))
         except FileNotFoundError:
             try:
-                self.C = torch.load(data_root.joinpath("C.pt"))
+                self.X = torch.load(data_root.joinpath("C.pt"))
             except FileNotFoundError:
-                self.C = torch.normal(0, 1, [len(self.vertex_ids), self.d])
+                self.X = torch.normal(0, 1, [len(self.vertex_ids), self.d])
         except Exception:
             raise
 
@@ -62,10 +62,10 @@ class Graph(Dataset):
             Vertex(
                 idx=idx,
                 id_=vertex_id,
-                c=c,
+                x=x,
             )
-            for idx, (vertex_id, c)
-            in enumerate(zip(self.vertex_ids, self.C))
+            for idx, (vertex_id, x)
+            in enumerate(zip(self.vertex_ids, self.X))
         ]
 
         # A set of the edges, E
@@ -113,7 +113,7 @@ class Graph(Dataset):
             self,
             idx: int
     ) -> torch.LongTensor:
-        return self.A[idx].coalesce().indices().squeeze()
+        return self.A[idx].coalesce().indices().view(-1)
 
     def build_P(self, similarity):
         edges = self.A.indices()
@@ -131,7 +131,7 @@ class Graph(Dataset):
     def Z(
         self,
     ) -> torch.Tensor:
-        return torch.stack([v.z for v in self.V]).cpu()
+        return torch.stack([v.z for v in self.V])
 
     def set_Z(self, Z: torch.Tensor) -> None:
         for z, v in zip(Z, self.V):
